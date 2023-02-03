@@ -15,6 +15,8 @@ output: html_document
 ```{r setup, include=FALSE}
 load("hw3_data.RData")
 library('dplyr')
+library('pROC')
+library('InformationValue')
 ```
 
 
@@ -35,6 +37,7 @@ Finally, summarise results.
 We set up the following parameters for the **simulation study**. We will sample from an **exponential** and from a **normal** distribution, which require the parameters $\labmda, \mu, \sigma$ to be set. We also define the simulation size $M$, the number of dimensions $k$ for each distribution, and the number of samples from each distribution, $n0$ and $n1$ respectively.
 ```{r hyperparameters}
 M = 1e4
+P = 1e2
 k = 5
 
 n0 = 1000
@@ -78,13 +81,28 @@ create_df = function(n0, n1, k, dist0, dist1) {
 
 ## Simulation Loop {#simulation-loop}
 ```{r simulation loop}
-for (i in 1:2) {
-    
+find_cutoff <- function(df) {
+  model = glm(formula=label ~ ., data=df, family=binomial)
+  y_pred = predict(model, df)
+  t = auc(df$label, y_pred)
+  return(t)
+}
+
+alpha = 0.05
+tests = boolean(M)
+
+for (i in 1:M) {
     df = create_df(n0, n1, k, function() rexp(n0 * k, lambda), function() rnorm(n1 * k, mu, sigma))
+    t_star = find_cutoff(df)
     
-    model = glm(formula=label ~ ., data=df, family=binomial)
+    t = numeric(length = P)
+    for (j in 1:P) {
+      df$label = df$label[sample.int(n1+n2)]
+      t[j] = find_cutoff(df)
+    }
     
-    y_pred = predict(model, df)
+    q = quantile(t, probs = 1-alpha)
+    tests[i] = t > q
 }
 ```
 
@@ -96,7 +114,7 @@ df = create_df(n0, n1, k, function() rexp(n0 * k, lambda), function() rnorm(n1 *
 model = glm(formula=label ~ ., data=df, family=binomial)
     
 y_pred = predict(model, df)
-
+optimalCutoff(df$label, y_pred)
 ```
 
 
