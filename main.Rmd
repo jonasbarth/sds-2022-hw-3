@@ -1,0 +1,181 @@
+---
+title: "main"
+author: "Jonas Barth, Mattia Castaldo, Matteo Migliarini"
+date: "2023-02-03"
+output: html_document
+---
+
+# Index
+- [Simulation Study](#simulation-study)
+    - [Setup](#parameter-setup)
+    - [Creating Data](#creating-data)
+    
+
+# Setup
+```{r setup, include=FALSE}
+load("hw3_data.RData")
+library('dplyr')
+```
+
+
+# Simulation Study {#simulation-study}
+Repeat $M$ times:
+
+1. pick two k-variate distributions to sample from. Each distribution represents one class.
+1. sample $n_0$ and $n_1$ number of samples from the respective distributions.
+1. train a binary classifier
+1. do permutation test (slide 8)
+Experiment with different:
+
+distributions
+sample sizes
+Finally, summarise results.
+
+## Setting up parameters {#parameter-setup}
+We set up the following parameters for the **simulation study**. We will sample from an **exponential** and from a **normal** distribution, which require the parameters $\labmda, \mu, \sigma$ to be set. We also define the simulation size $M$, the number of dimensions $k$ for each distribution, and the number of samples from each distribution, $n0$ and $n1$ respectively.
+```{r hyperparameters}
+M = 1e4
+k = 5
+
+n0 = 1000
+n1 = 1500
+
+lambda = 0.5
+mu = 1 / lambda
+sigma = mu
+```
+
+## Creating Data {#creating-data}
+```{r}
+create_df = function(n0, n1, k, dist0, dist1) {
+    #' Creates a dataframe with samples from the two distributions.
+    #' 
+    #' @param n0 number of samples from dist0
+    #' @param n1 number of samples from dist1
+    #' @param k number of features
+    #' @param dist0 a lambda for dist1
+    #' @param dist1 a lambda for dist2
+    #' 
+    #' @return a dataframe with n0 samples from dist0, n1 samples from dist1, and a label column.
+    X0 = dist0()
+    dim(X0) = c(n0, k)
+    y0 = rep(0, n0)
+    
+    X1 = dist1()
+    dim(X1) = c(n1, k)
+    y1 = rep(1, n1)
+    
+    y = rep(c(0, 1), c(n0, n1))
+    dim(y) = c(n0 + n1, 1)
+    
+    X = rbind(X0, X1)
+    df = data.frame(X)
+    df$label = y
+    
+    return(df)
+}
+```
+
+## Simulation Loop {#simulation-loop}
+```{r simulation loop}
+for (i in 1:2) {
+    
+    df = create_df(n0, n1, k, function() rexp(n0 * k, lambda), function() rnorm(n1 * k, mu, sigma))
+    
+    model = glm(formula=label ~ ., data=df, family=binomial)
+    
+    y_pred = predict(model, df)
+}
+```
+
+
+
+```{r}
+df = create_df(n0, n1, k, function() rexp(n0 * k, lambda), function() rnorm(n1 * k, mu, sigma))
+    
+model = glm(formula=label ~ ., data=df, family=binomial)
+    
+y_pred = predict(model, df)
+
+```
+
+
+
+
+
+
+
+
+
+# 1. Load and pool {#load-and-pool-data}
+First we normalise data coming from different labs, as the caltech lab and trinity lab have a very different scale. By doing this we hope to mitigate some negative effects on the pooling when later we'll try to use the mean to summarize the values across subjects or time, as a very different scale would have highly impacted the mean values.
+
+```{r Correct lab effect}
+asd = bind_rows(asd_sel, .id = 'id')
+asd$src = 'asd'
+td  = bind_rows(td_sel, .id = 'id')
+td$src  = 'td'
+td$lab  = ifelse(grepl('trinity', td$id, fixed = TRUE), 'trinity', 'caltech')
+asd$lab = ifelse(grepl('trinity', asd$id, fixed = TRUE), 'trinity', 'caltech')
+
+all = rbind(asd, td)
+
+all[all$lab=='caltech',2:117] = scale(all[all$lab=='caltech',2:117])
+all[all$lab=='trinity',2:117] = scale(all[all$lab=='trinity',2:117])
+
+
+asd = all[all$src == 'asd', 2:117]
+td  = all[all$src == 'td', 2:117]
+```
+
+## Pooling
+
+We tried pooling data together in different manners, by mean or by median, across subjects or across time.
+
+Pool data together by mean across subjects:
+```{r mean per subject}
+apply_per_subject <- function(df, func, subject_num = 12, jump = 145) {
+  df.pool = data.frame()
+  for(i in 1:jump) {
+    el = apply(df[seq(i, by=jump, length.out=subject_num), ],2, func)
+    df.pool = rbind(df.pool, el)
+  }
+  colnames(df.pool) = colnames(df)
+  return(df.pool)
+}
+
+asd.pool = apply_per_subject(asd, mean)
+td.pool  = apply_per_subject(td, mean)
+all.pool = rbind(asd.pool,td.pool)
+```
+
+Pool data together by median across subjects:
+```{r median per subject}
+asd.pool = apply_per_subject(asd, median)
+td.pool  = apply_per_subject(td, median)
+all.pool = rbind(asd.pool,td.pool)
+```
+
+Pool data together by mean across time:
+```{r mean per time, eval=FALSE}
+apply_per_time <- function(df, func, timestamps = 145, subjects_num = 12) {
+  df.pool = data.frame()
+  for(i in 0:11) {
+    el = apply(df[seq(1+i*timestamps, length.out=timestamps), ],2, func)
+    df.pool = rbind(df.pool, el)
+  }
+  colnames(df.pool) = colnames(df)
+  return(df.pool)
+}
+
+asd.pool = apply_per_time(asd, mean)
+td.pool  = apply_per_time(td, mean)
+```
+
+Pool data together by median across time:
+```{r median per time, eval=FALSE}
+asd.pool = apply_per_time(asd, median)
+td.pool  = apply_per_time(td, median)
+```
+
+We noticed that the pooling that works the best is the one using **median across subjects**, since it's the only one that gives us a decent amount of correlations.
