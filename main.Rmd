@@ -16,6 +16,8 @@ output: html_document
 load("hw3_data.RData")
 library('dplyr')
 library('pROC')
+library('transport')
+library('boot')
 library('InformationValue')
 ```
 
@@ -36,12 +38,12 @@ Finally, summarise results.
 ## Setting up parameters {#parameter-setup}
 We set up the following parameters for the **simulation study**. We will sample from an **exponential** and from a **normal** distribution, which require the parameters $\labmda, \mu, \sigma$ to be set. We also define the simulation size $M$, the number of dimensions $k$ for each distribution, and the number of samples from each distribution, $n0$ and $n1$ respectively.
 ```{r hyperparameters}
-M = 1e4
-P = 1e2
-k = 5
+M = 1e2
+P = 1e3
 
-n0 = 1000
-n1 = 1500
+k = 5
+n0 = 100
+n1 = 150
 
 lambda = 0.5
 mu = 1 / lambda
@@ -50,6 +52,52 @@ sigma = mu
 
 ## Creating Data {#creating-data}
 ```{r}
+nargs.func <- function(func) length(as.list(args(func))) - 1
+
+random.distro <- function(n, min = 1e-10, max = 10) {
+  rd <- sample(1:6, 1)[[1]]
+  print(rd)
+  c(rexp, rnorm, rgamma, rbeta, rt, runif)
+  if (rd==1) {
+    rate = runif(1, eps, max)
+    return(rexp(n,rate))
+  } else if (rd ==2) {
+    mu = runif(1,-max,max)
+    sigma = runif(1, eps, max)
+    return(rnorm(n, mu, sigma))
+  } else if (rd == 3) {
+    shape = runif(1, 0, max)
+    scale = runif(1, eps, max)
+    return(rgamma(n, shape, scale = scale))
+  } else if 
+  if (nargs.func(rd) <= 2) {
+    a = runif(1, min, max)
+    return(rd(n, a))
+  } else {
+    a = runif(1, min, max)
+    b = runif(1, min, max)
+    return( rd(n, a, b) )
+  }
+}
+
+random.data <- function(n, k) {
+  cols = list()
+  for (i in 1:k)
+    cols[[paste(i)]] = random.distro(n)
+  
+  return(data.frame(cols))
+}
+
+random.data(100,5)
+```
+
+
+```{r}
+random_distro <- function(n) {
+  i = random
+}
+
+
 create_df = function(n0, n1, k, dist0, dist1) {
     #' Creates a dataframe with samples from the two distributions.
     #' 
@@ -71,39 +119,51 @@ create_df = function(n0, n1, k, dist0, dist1) {
     y = rep(c(0, 1), c(n0, n1))
     dim(y) = c(n0 + n1, 1)
     
+    d = wasserstein(pp(X0), pp(X1))
+    print(d)
+    
     X = rbind(X0, X1)
     df = data.frame(X)
     df$label = y
     
     return(df)
 }
+create_df(1020, 1000, k, function() rexp(1020 * k, lambda), function() rnorm(1000 * k, mu, sigma))
 ```
+
+```{r}
+find_cutoff()
+```
+
 
 ## Simulation Loop {#simulation-loop}
 ```{r simulation loop}
 find_cutoff <- function(df) {
   model = glm(formula=label ~ ., data=df, family=binomial)
   y_pred = predict(model, df)
-  t = auc(df$label, y_pred)
+  t = as.numeric(auc(df$label, y_pred))
   return(t)
 }
 
 alpha = 0.05
-tests = boolean(M)
+tests = integer(M)
+dists = numeric(M)
 
-for (i in 1:M) {
-    df = create_df(n0, n1, k, function() rexp(n0 * k, lambda), function() rnorm(n1 * k, mu, sigma))
+for (i in 1:1) {
+    df = create_df(n0, n1, k, function() rexp(n0 * k, lambda), function() rnorm(n1 * k, mu*2, sigma*2))
     t_star = find_cutoff(df)
+    print(t_star)
     
-    t = numeric(length = P)
-    for (j in 1:P) {
-      df$label = df$label[sample.int(n1+n2)]
-      t[j] = find_cutoff(df)
-    }
-    
-    q = quantile(t, probs = 1-alpha)
-    tests[i] = t > q
+    b = boot(df, function(df, ind) {
+      df$label = df$label[ind]
+      t=find_cutoff(df)
+      return(t)
+    }, P, ncpus=4)
+
+    q = quantile(b$t, probs = 1-alpha)
+    tests[i] = t_star >= q
 }
+tests
 ```
 
 
