@@ -39,7 +39,7 @@ Finally, summarise results.
 We set up the following parameters for the **simulation study**. We will sample from an **exponential** and from a **normal** distribution, which require the parameters $\labmda, \mu, \sigma$ to be set. We also define the simulation size $M$, the number of dimensions $k$ for each distribution, and the number of samples from each distribution, $n0$ and $n1$ respectively.
 ```{r hyperparameters}
 M = 1e2
-P = 1e3
+P = 10
 
 k = 5
 n0 = 100
@@ -54,30 +54,36 @@ sigma = mu
 ```{r}
 nargs.func <- function(func) length(as.list(args(func))) - 1
 
-random.distro <- function(n, min = 1e-10, max = 10) {
+random.distro <- function(n, eps = 1e-10, max = 2) {
   rd <- sample(1:6, 1)[[1]]
-  print(rd)
-  c(rexp, rnorm, rgamma, rbeta, rt, runif)
+  bias = rnorm(1, 0, max)
+  
+  #c(rexp, rnorm, rgamma, rbeta, rt, runif)
   if (rd==1) {
     rate = runif(1, eps, max)
-    return(rexp(n,rate))
+    X = rexp(n,rate)
   } else if (rd ==2) {
     mu = runif(1,-max,max)
     sigma = runif(1, eps, max)
-    return(rnorm(n, mu, sigma))
+    X = rnorm(n, mu, sigma)
   } else if (rd == 3) {
     shape = runif(1, 0, max)
     scale = runif(1, eps, max)
-    return(rgamma(n, shape, scale = scale))
-  } else if 
-  if (nargs.func(rd) <= 2) {
-    a = runif(1, min, max)
-    return(rd(n, a))
-  } else {
-    a = runif(1, min, max)
-    b = runif(1, min, max)
-    return( rd(n, a, b) )
+    X = rgamma(n, shape, scale = scale)
+  } else if (rd == 4) {
+    alpha = runif(1, 0, max)
+    beta  = runif(1, 0, max)
+    X = rbeta(n, alpha, beta)
+  } else if (rd == 5) {
+    df  = runif(1, eps, max)
+    X = rt(n, df)
+  } else if (rd == 6) {
+    m = runif(1, -max, 0)
+    M = runif(1, 0, max)
+    X =  runif(n, m, M)
   }
+  
+  return(X + bias)
 }
 
 random.data <- function(n, k) {
@@ -93,12 +99,23 @@ random.data(100,5)
 
 
 ```{r}
+X = random.data(100, 5)
+Y = random.data(100, 5)
+
+wasserstein(pp(X), pp(Y))
+subwasserstein(pp(X), pp(Y), 30, 100)
+
+sample(X, 10)
+```
+
+
+```{r}
 random_distro <- function(n) {
   i = random
 }
 
 
-create_df = function(n0, n1, k, dist0, dist1) {
+create_df = function(n0, n1, k) {
     #' Creates a dataframe with samples from the two distributions.
     #' 
     #' @param n0 number of samples from dist0
@@ -108,31 +125,33 @@ create_df = function(n0, n1, k, dist0, dist1) {
     #' @param dist1 a lambda for dist2
     #' 
     #' @return a dataframe with n0 samples from dist0, n1 samples from dist1, and a label column.
-    X0 = dist0()
-    dim(X0) = c(n0, k)
+    X0 = random.data(n0, k)
     y0 = rep(0, n0)
     
-    X1 = dist1()
-    dim(X1) = c(n1, k)
+    X1 = random.data(n1, k)
     y1 = rep(1, n1)
     
     y = rep(c(0, 1), c(n0, n1))
     dim(y) = c(n0 + n1, 1)
     
-    d = wasserstein(pp(X0), pp(X1))
-    print(d)
     
+    n.min = min(n0, n1)
+    X0.sample = X0[sample(nrow(X0), n.min), ]
+    X1.sample = X1[sample(nrow(X1), n.min), ]
+    d = wasserstein(pp(X0.sample), pp(X1.sample))
+
     X = rbind(X0, X1)
     df = data.frame(X)
     df$label = y
+    df = df[sample(nrow(df), nrow(df)), ]
     
-    return(df)
+    generated = list()
+    generated$df = df
+    generated$distance = d
+    
+    return(generated)
 }
-create_df(1020, 1000, k, function() rexp(1020 * k, lambda), function() rnorm(1000 * k, mu, sigma))
-```
-
-```{r}
-find_cutoff()
+create_df(10, 15, k)
 ```
 
 
@@ -149,10 +168,13 @@ alpha = 0.05
 tests = integer(M)
 dists = numeric(M)
 
-for (i in 1:1) {
-    df = create_df(n0, n1, k, function() rexp(n0 * k, lambda), function() rnorm(n1 * k, mu*2, sigma*2))
+for (i in 1:M) {
+    generated = create_df(n0, n1, k)
+    df = generated$df
+    distance = generated$distance
     t_star = find_cutoff(df)
     print(t_star)
+    print(distance)
     
     b = boot(df, function(df, ind) {
       df$label = df$label[ind]
