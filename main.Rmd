@@ -173,10 +173,11 @@ simulate = function(M, n0, n1, k, create.data) {
     #' @param n0 the number of samples to draw from the first distribution.
     #' @param n1 the number of samples to draw from the second distribution.
     #' @param k the number of features in each distribution.
-    #' @param create.data a function for sampling from the distributions.
+    #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k.
     #' @return a result vector with p-values from the testing procedure.
     
     results = vector(length = M)
+    
 
     for (i in 1:M) {
         generated = create.data(n0, n1, k)
@@ -189,22 +190,67 @@ simulate = function(M, n0, n1, k, create.data) {
         df$y_pred = y_pred
         y_pred_class_1 = df[df$label == 1,"y_pred"]
         y_pred_class_0 = df[df$label == 0,"y_pred"]
-       
+
+        # TODO remove this return        
+        return(df)
+        hist(y_pred_class_0, col =rgb(1,0,0,0.2), probability = TRUE)
+        hist(y_pred_class_1, add = T, col = rgb(0,1,0,0.2), probability = TRUE)
+        result = wilcox.test(y_pred_class_0, y_pred_class_1)
         
-        ks.result = ks.test(y_pred_class_0, y_pred_class_1)
-        
-        results[i] = ks.result$p.value
+        results[i] = result$p.value
     }
     return(results)
 } 
 ```
 
 ```{r warning=FALSE}
-simulate(200, n0, n1, k, create_df)
+create.normal.df = function(n0, n1, k) {
+    #' Creating a dataframe with samples from the same normal distribution.
+    X0 = rnorm(n0 * k, mean = 2, sd = 7)
+    dim(X0) = c(n0, k)
+    y0 = rep(0, n0)
+    
+    X1 = rnorm(n1 * k, mean = 2, sd = 7)
+    dim(X1) = c(n1, k)
+    y1 = rep(1, n1)
+    
+    y = rep(c(0, 1), c(n0, n1))
+    dim(y) = c(n0 + n1, 1)
+    
+    
+    n.min = min(n0, n1)
+    X0.sample = X0[sample(nrow(X0), n.min), ]
+    X1.sample = X1[sample(nrow(X1), n.min), ]
+    d = wasserstein(pp(X0.sample), pp(X1.sample))
+
+    X = rbind(X0, X1)
+    df = data.frame(X)
+    df$label = y
+    df = df[sample(nrow(df), nrow(df)), ]
+    
+    generated = list()
+    generated$df = df
+    generated$distance = d
+    
+    return(generated)
+}
+
 ```
 
+Sampling from the same distribution still produces many low p-values, meaning that we reject the null-hypothesis many times. This means that we think that the classes come from two **different** distributions even though they come from the same. This is even though the scores produced by the classifier appear to be similar as shown in the histogram below.
+```{r}
+results = simulate(1, 100, 150, k, create.normal.df)
 
 
+y_pred_class_1 = results[results$label == 1,"y_pred"]
+y_pred_class_0 = results[results$label == 0,"y_pred"]
+
+hist(y_pred_class_1, probability = TRUE, col = rgb(0,0,1,0.5))
+hist(y_pred_class_0, add = TRUE, col = rgb(1,0,0,0.5), probability = TRUE)
+
+ks.test(y_pred_class_0, y_pred_class_1)
+
+```
 
 
 
