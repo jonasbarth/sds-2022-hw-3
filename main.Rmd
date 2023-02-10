@@ -55,10 +55,10 @@ sigma = mu
 nargs.func <- function(func) length(as.list(args(func))) - 1
 
 random.distro <- function(n, eps = 1e-10, max = 2) {
+  #' Generates a univariate random distribution with n samples.
   rd <- sample(1:6, 1)[[1]]
-  bias = rnorm(1, 0, max)
+  noise = rnorm(n, 0, max)
   
-  #c(rexp, rnorm, rgamma, rbeta, rt, runif)
   if (rd==1) {
     rate = runif(1, eps, max)
     X = rexp(n,rate)
@@ -83,10 +83,11 @@ random.distro <- function(n, eps = 1e-10, max = 2) {
     X =  runif(n, m, M)
   }
   
-  return(X + bias)
+  return(X + noise)
 }
 
 random.data <- function(n, k) {
+  #' Generates a single k-variate random distribution with n samples.
   cols = list()
   for (i in 1:k)
     cols[[paste(i)]] = random.distro(n)
@@ -105,7 +106,7 @@ Y = random.data(100, 5)
 wasserstein(pp(X), pp(Y))
 subwasserstein(pp(X), pp(Y), 30, 100)
 
-sample(X, 10)
+#sample(X, 10)
 ```
 
 
@@ -121,8 +122,6 @@ create_df = function(n0, n1, k) {
     #' @param n0 number of samples from dist0
     #' @param n1 number of samples from dist1
     #' @param k number of features
-    #' @param dist0 a lambda for dist1
-    #' @param dist1 a lambda for dist2
     #' 
     #' @return a dataframe with n0 samples from dist0, n1 samples from dist1, and a label column.
     X0 = random.data(n0, k)
@@ -151,7 +150,6 @@ create_df = function(n0, n1, k) {
     
     return(generated)
 }
-create_df(10, 15, k)
 ```
 
 
@@ -167,39 +165,43 @@ find_cutoff <- function(df) {
 alpha = 0.05
 tests = integer(M)
 dists = numeric(M)
+results = vector(length = M)
 
-for (i in 1:M) {
-    generated = create_df(n0, n1, k)
-    df = generated$df
-    distance = generated$distance
-    t_star = find_cutoff(df)
-    print(t_star)
-    print(distance)
+simulate = function(M, n0, n1, k, create.data) {
+    #' Simulates operating characteristics of a testing procedure for two distributions.
+    #' @param M the number of simulations
+    #' @param n0 the number of samples to draw from the first distribution.
+    #' @param n1 the number of samples to draw from the second distribution.
+    #' @param k the number of features in each distribution.
+    #' @param create.data a function for sampling from the distributions.
+    #' @return a result vector with p-values from the testing procedure.
     
-    b = boot(df, function(df, ind) {
-      df$label = df$label[ind]
-      t=find_cutoff(df)
-      return(t)
-    }, P, ncpus=4)
+    results = vector(length = M)
 
-    q = quantile(b$t, probs = 1-alpha)
-    tests[i] = t_star >= q
-}
-tests
+    for (i in 1:M) {
+        generated = create.data(n0, n1, k)
+        df = generated$df
+        distance = generated$distance
+
+        model = glm(formula=label ~ ., data=df, family=binomial)
+        
+        y_pred = predict(model, df, type=c("response"))
+        df$y_pred = y_pred
+        y_pred_class_1 = df[df$label == 1,"y_pred"]
+        y_pred_class_0 = df[df$label == 0,"y_pred"]
+       
+        
+        ks.result = ks.test(y_pred_class_0, y_pred_class_1)
+        
+        results[i] = ks.result$p.value
+    }
+    return(results)
+} 
 ```
 
-
-
-```{r}
-df = create_df(n0, n1, k, function() rexp(n0 * k, lambda), function() rnorm(n1 * k, mu, sigma))
-    
-model = glm(formula=label ~ ., data=df, family=binomial)
-    
-y_pred = predict(model, df)
-optimalCutoff(df$label, y_pred)
+```{r warning=FALSE}
+simulate(200, n0, n1, k, create_df)
 ```
-
-
 
 
 
