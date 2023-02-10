@@ -53,59 +53,64 @@ sigma = mu
 
 ## Creating Data {#creating-data}
 ```{r}
-nargs.func <- function(func) length(as.list(args(func))) - 1
-
-random.distro <- function(n, eps = 1e-10, max = 2) {
+random.distro <- function(n, mean = 1, sd = 1, noisiness = sd * 0.5, eps = 1e-5) {
   #' Generates a univariate random distribution with n samples.
-  rd <- sample(1:6, 1)[[1]]
-  noise = rnorm(n, 0, max)
-  
+  rd <- sample(1:5, 1)[[1]]
+  #print(rd)
+
   if (rd==1) {
-    rate = runif(1, eps, max)
-    X = rexp(n,rate)
+    rate = 1 / sd
+    X = rexp(n,rate) + (mean - rate)
   } else if (rd ==2) {
-    mu = runif(1,-max,max)
-    sigma = runif(1, eps, max)
-    X = rnorm(n, mu, sigma)
+    X = rnorm(n, mean, sd)
   } else if (rd == 3) {
-    shape = runif(1, 0, max)
-    scale = runif(1, eps, max)
+    shape = (mean/sd)^2
+    scale = sd / sqrt(shape)
     X = rgamma(n, shape, scale = scale)
+#  } else if (rd == 4) {
+#    mean = min(abs(mean), 1-eps)
+#    nu = mean * (1-mean) / sd^2 - 1
+#    alpha = mean * nu
+#    beta  = (1-mean) * nu
+#    X = rbeta(n, alpha, beta)
   } else if (rd == 4) {
-    alpha = runif(1, 0, max)
-    beta  = runif(1, 0, max)
-    X = rbeta(n, alpha, beta)
-  } else if (rd == 5) {
-    df  = runif(1, eps, max)
-    X = rt(n, df)
-  } else if (rd == 6) {
-    m = runif(1, -max, 0)
-    M = runif(1, 0, max)
-    X =  runif(n, m, M)
+    sd = max(sqrt(2) + eps, sd)
+    df = 2 * sd^2 / (sd^2 - 1)
+    X = rt(n, df) + mean
+  } else {
+    b = mean + sd / sqrt(2)
+    a = mean - sd / sqrt(2)
+    X =  runif(n, a, b)
   }
   
+  noise = rnorm(n, 0, noisiness)
   return(X + noise)
 }
 
-random.data <- function(n, k) {
+random.data <- function(n, k, means = rnorm(k, 0, 3), sds = rnorm(k, 3, 1)) {
   #' Generates a single k-variate random distribution with n samples.
   cols = list()
-  for (i in 1:k)
-    cols[[paste(i)]] = random.distro(n)
-  
+  for (i in 1:k) {
+    mean = means[i]
+    sd = max(1, sds[i])
+    cols[[paste(i)]] = random.distro(n, mean, sd)
+  }
   return(data.frame(cols))
 }
 
-random.data(100,5)
+random.data(10,10)
 ```
 
 
 ```{r}
-X = random.data(100, 5)
-Y = random.data(100, 5)
+means = rnorm(5, 0,3)
+sds   = rnorm(5, 3, 1)
+
+X = random.data(100, 5, means = means, sds = sds)
+Y = random.data(100, 5, means = means, sds = sds)
 
 wasserstein(pp(X), pp(Y))
-subwasserstein(pp(X), pp(Y), 30, 100)
+#subwasserstein(pp(X), pp(Y), 30, 100)
 
 #sample(X, 10)
 ```
