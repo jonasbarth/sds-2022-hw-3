@@ -19,6 +19,7 @@ library('pROC')
 library('transport')
 library('boot')
 library('InformationValue')
+library('glmnet') # for regularising our model
 ```
 
 
@@ -184,9 +185,12 @@ simulate = function(M, n0, n1, k, create.data) {
         df = generated$df
         distance = generated$distance
 
-        model = glm(formula=label ~ ., data=df, family=binomial)
+        #model = glm(formula=label ~ ., data=df, family=binomial)
+        X = model.matrix(label ~ ., df)[,-1]
+        y = df[,ncol(df)]
         
-        y_pred = predict(model, df, type=c("response"))
+        model = glmnet(X, y, alpha = 1, family = "binomial", lambda = 0.2)
+        y_pred = predict(model, X)
         df$y_pred = y_pred
         y_pred_class_1 = df[df$label == 1,"y_pred"]
         y_pred_class_0 = df[df$label == 0,"y_pred"]
@@ -200,7 +204,7 @@ simulate = function(M, n0, n1, k, create.data) {
         results[i] = result$p.value
     }
     return(results)
-} 
+}
 ```
 
 ```{r warning=FALSE}
@@ -237,10 +241,14 @@ create.normal.df = function(n0, n1, k) {
 
 ```
 
+
+
 Sampling from the same distribution still produces many low p-values, meaning that we reject the null-hypothesis many times. This means that we think that the classes come from two **different** distributions even though they come from the same. This is even though the scores produced by the classifier appear to be similar as shown in the histogram below.
 ```{r}
-results = simulate(1, 100, 150, k, create.normal.df)
+results = simulate(1, 100, 150, k, create_df)
 
+hist(results$y_pred)
+summary(results$y_pred)
 
 y_pred_class_1 = results[results$label == 1,"y_pred"]
 y_pred_class_0 = results[results$label == 0,"y_pred"]
