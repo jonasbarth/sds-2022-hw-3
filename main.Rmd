@@ -117,12 +117,7 @@ wasserstein(pp(X), pp(Y))
 
 
 ```{r}
-random_distro <- function(n) {
-  i = random
-}
-
-
-create_df = function(n0, n1, k) {
+create_df = function(n0, n1, k, H0 = F, shuffle = T) {
     #' Creates a dataframe with samples from the two distributions.
     #' 
     #' @param n0 number of samples from dist0
@@ -130,12 +125,21 @@ create_df = function(n0, n1, k) {
     #' @param k number of features
     #' 
     #' @return a dataframe with n0 samples from dist0, n1 samples from dist1, and a label column.
-    X0 = random.data(n0, k)
+    
+    means = rnorm(k, 0, 10)
+    sds   = rnorm(k, 3, 1)
+    if (H0) {
+      X  = random.data(n0+n1, k, means, sds)
+      X0 = X[1:n0, ]
+      X1 = X[n0+1:n0+n1, ]
+      
+    } else {
+      X0 = random.data(n0, k, means, sds)
+      X1 = random.data(n1, k, means, sds)
+    }
+    
     y0 = rep(0, n0)
-    
-    X1 = random.data(n1, k)
     y1 = rep(1, n1)
-    
     y = rep(c(0, 1), c(n0, n1))
     dim(y) = c(n0 + n1, 1)
     
@@ -148,11 +152,18 @@ create_df = function(n0, n1, k) {
     X = rbind(X0, X1)
     df = data.frame(X)
     df$label = y
-    df = df[sample(nrow(df), nrow(df)), ]
+    
+    if (shuffle)
+      df = df[sample(nrow(df), nrow(df)), ]
     
     generated = list()
     generated$df = df
     generated$distance = d
+    generated$means = means
+    generated$sds = sds
+    generated$same.src = H0
+    generated$X = X
+    generated$y = y
     
     return(generated)
 }
@@ -161,13 +172,6 @@ create_df = function(n0, n1, k) {
 
 ## Simulation Loop {#simulation-loop}
 ```{r simulation loop}
-find_cutoff <- function(df) {
-  model = glm(formula=label ~ ., data=df, family=binomial)
-  y_pred = predict(model, df)
-  t = as.numeric(auc(df$label, y_pred))
-  return(t)
-}
-
 alpha = 0.05
 tests = integer(M)
 dists = numeric(M)
