@@ -12,7 +12,7 @@ output: html_document
     
 
 # Setup
-```{r}
+```{r eval=FALSE, include=FALSE}
 install.packages("dplyr")
 install.packages("pROC")
 install.packages("transport")
@@ -27,6 +27,7 @@ library('dplyr')
 library('pROC')
 library('transport')
 library('boot')
+library('ggplot2')
 library('InformationValue')
 library('glmnet') # for regularising our model
 # Parallelization libraries
@@ -269,7 +270,7 @@ Now we're going to try the same test but with different parameters:
 - whether the data classes are balance or unbalanced, $p$ being the proportion of one class over the total: $p \in \{20\% , 50\%\} $
 
 
-```{r params simulation, warning=FALSE}
+```{r experiment new params simulation, eval=FALSE, warning=FALSE}
 k.values = seq(3, 7, by=2)
 N.values = seq(300, 900, by = 300)
 prop.values = c(0.2, 0.5)
@@ -288,30 +289,29 @@ for (i in 1:nrow(params.df)) {
   params.df$power[i] = sum(simulate(M, n0, n1, row$k, create_df, H0=FALSE) < 0.05)/M
 }
 write.csv(params.df, 'params.csv', row.names = FALSE) 
+```
 
+```{r read params from disk, include=FALSE}
+params.df = read.csv('params.csv')
+
+k.values = sort(unique(params.df$k))
+N.values = sort(unique(params.df$N))
+prop.values = sort(unique(params.df$prop))
 ```
 
 ```{r}
+#for (N in N.values) {
+#  y = params.df$size[(params.df$N == N) & (params.df$prop == 0.5)]
+#  lines(k.values, y, col='orange', type='l')
+#}
 
-plot(k.values, params.df$size[(params.df$N.values == 300) & (params.df$prop == 0.2)], col='', type='l')
+params.df$N = as.character(params.df$N)
+ggplot(data=params.df[params.df$prop == 0.2, ], aes(x=k, y=power, col=N, group=1)) +
+  geom_line()+
+  geom_point()
+
 
 ```
-
-
-```{r simulation parallelized, warning=FALSE}
-res = foreach(k=params.df$k, N=params.df$N, prop=params.df$prop, .combine=rbind) %dopar% {
-    n0 = as.integer(N * prop)
-    n1 = as.integer(N - n0)
-    
-    size = sum(simulate(M, n0, n1, k, create_df, H0=TRUE) < 0.05) / M
-    power = sum(simulate(M, n0, n1, k, create_df, H0=FALSE) > 0.05)/M
-    
-    data.frame(k=k, N=N, prop=prop, size=size, power=power)
-}
-params.df
-```
-
-
 
 
 
