@@ -11,7 +11,7 @@ jobs:
       - name: install rmarkdown
         run: Rscript -e 'install.packages("rmarkdown")'
       - name: Render my document to html
-        run: Rscript -e 'rmarkdown::render("main.Rmd", output_format = "html")'
+        run: Rscript -e 'rmarkdown::render("main.Rmd", output_format = "html_document")'
       - name: Commit results
         run: |
           git add main.html
