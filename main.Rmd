@@ -278,7 +278,26 @@ abline(v=alpha, col = 'orange', lwd=3)
 
 
 
+```{r params simulation, warning=FALSE}
+k.values = seq(3, 7, by=2)
+N.values = seq(300, 900, by = 300)
+prop.values = c(0.2, 0.5)
 
+total_params = length(k.values) * length(N.values) * length(prop.values)
+params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
+params.df$it = 1:total_params
+params.df$size  = numeric(total_params)
+params.df$power = numeric(total_params)
+
+for (i in 1:nrow(params.df)) {
+  row = params.df[i, ]
+  n0 = as.integer(row$N * row$prop)
+  n1 = as.integer(row$N - n0)
+  
+  row$size = sum(simulate(M, n0, n1, row$k, create_df, H0=TRUE) < 0.05) / M
+  row$power = sum(simulate(M, n0, n1, row$k, create_df, H0=FALSE) > 0.05)/M
+}
+params.df
 ```
 
 
