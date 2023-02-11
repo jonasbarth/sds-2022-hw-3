@@ -39,7 +39,7 @@ Finally, summarise results.
 ## Setting up parameters {#parameter-setup}
 We set up the following parameters for the **simulation study**. We will sample from an **exponential** and from a **normal** distribution, which require the parameters $\labmda, \mu, \sigma$ to be set. We also define the simulation size $M$, the number of dimensions $k$ for each distribution, and the number of samples from each distribution, $n0$ and $n1$ respectively.
 ```{r hyperparameters}
-M = 1e2
+M = 1e3
 P = 10
 
 k = 5
@@ -264,19 +264,20 @@ create.normal.df = function(n0, n1, k) {
 
 
 Sampling from the same distribution still produces many low p-values, meaning that we reject the null-hypothesis many times. This means that we think that the classes come from two **different** distributions even though they come from the same. This is even though the scores produced by the classifier appear to be similar as shown in the histogram below.
-```{r}
-results = simulate(1, 1000, 1500, k, create.normal.df)
+```{r H1 simulation, warning=FALSE}
+results.H1 = simulate(M, n0, n1, k, create_df, H0=FALSE)
+hist(results.H1, breaks = 20)
+abline(v=alpha, col = 'orange', lwd=3)
+```
 
-hist(results$y_pred)
-summary(results$y_pred)
+```{r H0 simulation, warning=FALSE}
+results.H0 = simulate(M, 200, 200, k, create_df, H0=TRUE)
+hist(results.H0, breaks = 20)
+abline(v=alpha, col = 'orange', lwd=3)
+```
 
-y_pred_class_1 = results[results$label == 1,"y_pred"]
-y_pred_class_0 = results[results$label == 0,"y_pred"]
 
-hist(y_pred_class_1, probability = TRUE, col = rgb(0,0,1,0.5))
-hist(y_pred_class_0, add = TRUE, col = rgb(1,0,0,0.5), probability = TRUE)
 
-ks.test(y_pred_class_0, y_pred_class_1)
 
 ```
 
