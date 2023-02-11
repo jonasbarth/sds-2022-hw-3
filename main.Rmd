@@ -274,46 +274,78 @@ Now we're going to try the same test but with different parameters:
 
 
 ```{r experiment new params simulation, eval=FALSE, warning=FALSE}
-k.values = seq(3, 7, by=2)
-N.values = seq(300, 900, by = 300)
+k.values = seq(3, 7)
+N.values = seq(300, 2000, by = 100)
 prop.values = c(0.2, 0.5)
 
 total_params = length(k.values) * length(N.values) * length(prop.values)
 params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
-params.df$size  = numeric(total_params)
-params.df$power = numeric(total_params)
+
+performance = data.frame()
 
 for (i in 1:nrow(params.df)) {
   row = params.df[i, ]
   n0 = as.integer(row$N * row$prop)
   n1 = as.integer(row$N - n0)
   
-  params.df$size[i] = sum(simulate(M, n0, n1, row$k, create_df, H0=TRUE) < 0.05) / M
-  params.df$power[i] = sum(simulate(M, n0, n1, row$k, create_df, H0=FALSE) < 0.05)/M
+  performance = rbind(
+    data.frame(
+      N    = rep.int(row$N, M),
+      prop = rep(row$prop,  M),
+      k    = rep.int(row$k, M),
+      size = simulate(M, n0, n1, row$k, create_df, H0=TRUE),
+      power= simulate(M, n0, n1, row$k, create_df, H0=FALSE)
+    ),
+    performance
+  )
+  write.csv(performance, 'performance.csv', row.names = FALSE) 
 }
-write.csv(params.df, 'params.csv', row.names = FALSE) 
+
 ```
 
-```{r read params from disk, include=FALSE}
-params.df = read.csv('params.csv')
+```{r load performance data from disk, include=FALSE}
+performance = read.csv('performance.csv')
 
-k.values = sort(unique(params.df$k))
-N.values = sort(unique(params.df$N))
-prop.values = sort(unique(params.df$prop))
+k.values = sort(unique(performance$k))
+N.values = sort(unique(performance$N))
+prop.values = sort(unique(performance$prop))
+params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
 ```
 
 ```{r}
-#for (N in N.values) {
-#  y = params.df$size[(params.df$N == N) & (params.df$prop == 0.5)]
-#  lines(k.values, y, col='orange', type='l')
-#}
+performance$prop = ifelse(performance$prop == 0.2, 'Imbalanced 20-80', 'Balanced 50-50')
 
-params.df$N = as.character(params.df$N)
-ggplot(data=params.df[params.df$prop == 0.2, ], aes(x=k, y=power, col=N, group=1)) +
-  geom_line()+
-  geom_point()
+performance.summary = performance |>
+  group_by(k, N, prop) |>
+  dplyr::summarise(
+    type.one = sum(size < alpha) / length(size),
+    type.two = 1 - sum(power > alpha) / length(power), 
+    .groups = 'keep'
+  )
 
+performance.summary |>
+  ggplot(
+    aes(x=k, y = type.one)
+  ) +
+  geom_boxplot(aes(group=interaction(k, prop), col=prop)) +
+  geom_dotplot(aes(group=k+N, fill=N), binaxis='y', stackdir='center', dotsize=.2, binwidth = 0.005) +
+  ggtitle('Distribution of Type I error probability') +
+  xlab('Number of features [k]') +
+  ylab('P(Type I error)') + 
+  labs(fill = 'Number of samples', col = 'Class balance')
+```
 
+```{r}
+performance.summary |>
+  ggplot(
+    aes(x=k, y = type.two)
+  ) +
+  geom_boxplot(aes(group=interaction(k, prop), col=prop)) +
+  geom_dotplot(aes(group=k+N, fill=N), binaxis='y', stackdir='center', dotsize=.5, binwidth = 0.01) +
+  ggtitle('Distribution of Type II error probability') +
+  xlab('Number of features [k]') +
+  ylab('1 - P(Type II error)') + 
+  labs(fill = 'Number of samples', col = 'Class balance')
 ```
 
 
