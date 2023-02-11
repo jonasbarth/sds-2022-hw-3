@@ -132,7 +132,7 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T) {
     if (H0) {
       X  = random.data(n0+n1, k, means, sds)
       X0 = X[1:n0, ]
-      X1 = X[n0+1:n0+n1, ]
+      X1 = X[(n0+1):(n0+n1), ]
     } else {
       X0 = random.data(n0, k, means, sds)
       X1 = random.data(n1, k, means, sds)
@@ -176,6 +176,7 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T) {
 ```
 
 
+
 ## Simulation Loop {#simulation-loop}
 ```{r simulation loop}
 alpha = 0.05
@@ -183,7 +184,7 @@ tests = integer(M)
 dists = numeric(M)
 results = vector(length = M)
 
-simulate = function(M, n0, n1, k, create.data) {
+simulate = function(M, n0, n1, k, create.data, H0) {
     #' Simulates operating characteristics of a testing procedure for two distributions.
     #' @param M the number of simulations
     #' @param n0 the number of samples to draw from the first distribution.
@@ -196,7 +197,7 @@ simulate = function(M, n0, n1, k, create.data) {
     
 
     for (i in 1:M) {
-        generated = create.data(n0, n1, k)
+        generated = create.data(n0, n1, k, H0 = H0)
         df = generated$df
         df.train = generated$df.train
         df.test  = generated$df.test
