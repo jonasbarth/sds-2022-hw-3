@@ -4,6 +4,7 @@ jobs:
   render_document:
     environment: 
       name: Build rmd
+    env:
       GITHUB_TOKEN: ${{ secrets.ACTION_ACCESS_TOKEN }}
     runs-on: ubuntu-latest
     steps:
