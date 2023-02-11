@@ -17,6 +17,10 @@ install.packages("dplyr")
 install.packages("pROC")
 install.packages("transport")
 install.packages("glmnet")
+install.packages("doParallel")
+install.packages("foreach")
+install.packages("iterators")
+install.packages("doParallel")
 ```
 
 
