@@ -14,9 +14,7 @@ output: html_document
 # Setup
 ```{r include=FALSE}
 install.packages("dplyr")
-install.packages("pROC")
 install.packages("transport")
-install.packages("glmnet")
 install.packages("doParallel")
 install.packages("foreach")
 install.packages("iterators")
@@ -28,12 +26,8 @@ install.packages("ggplot2")
 ```{r setup, include=FALSE}
 load("hw3_data.RData")
 library('dplyr')
-library('pROC')
 library('transport')
-library('boot')
 library('ggplot2')
-library('InformationValue')
-library('glmnet') # for regularising our model
 # Parallelization libraries
 library(foreach)
 library(iterators)
