@@ -12,6 +12,15 @@ output: html_document
     
 
 # Setup
+```{r}
+install.packages("dplyr")
+install.packages("pROC")
+install.packages("transport")
+install.packages("InformationValue")
+install.packages("glmnet")
+```
+
+
 ```{r setup, include=FALSE}
 load("hw3_data.RData")
 library('dplyr')
