@@ -20,6 +20,11 @@ library('transport')
 library('boot')
 library('InformationValue')
 library('glmnet') # for regularising our model
+# Parallelization libraries
+library(foreach)
+library(iterators)
+library(doParallel) 
+registerDoParallel(cores = detectCores())
 ```
 
 
@@ -297,8 +302,24 @@ for (i in 1:nrow(params.df)) {
   row$size = sum(simulate(M, n0, n1, row$k, create_df, H0=TRUE) < 0.05) / M
   row$power = sum(simulate(M, n0, n1, row$k, create_df, H0=FALSE) > 0.05)/M
 }
+
+```
+
+```{r simulation parallelized, warning=FALSE}
+res = foreach(k=params.df$k, N=params.df$N, prop=params.df$prop, .combine=rbind) %dopar% {
+    n0 = as.integer(N * prop)
+    n1 = as.integer(N - n0)
+    
+    size = sum(simulate(M, n0, n1, k, create_df, H0=TRUE) < 0.05) / M
+    power = sum(simulate(M, n0, n1, k, create_df, H0=FALSE) > 0.05)/M
+    
+    data.frame(k=k, N=N, prop=prop, size=size, power=power)
+}
 params.df
 ```
+
+
+
 
 
 
