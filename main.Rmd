@@ -12,7 +12,7 @@ output: html_document
     
 
 # Setup
-```{r eval=FALSE, include=FALSE}
+```{r include=FALSE}
 install.packages("dplyr")
 install.packages("pROC")
 install.packages("transport")
