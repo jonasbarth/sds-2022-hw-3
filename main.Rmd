@@ -108,21 +108,25 @@ random.data(10,10)
 
 
 ```{r}
-means = rnorm(5, 0,3)
-sds   = rnorm(5, 3, 1)
-
-X = random.data(100, 5, means = means, sds = sds)
-Y = random.data(100, 5, means = means, sds = sds)
-
-wasserstein(pp(X), pp(Y))
-#subwasserstein(pp(X), pp(Y), 30, 100)
-
+beg <- Sys.time()
+for (i in 1: 100) {
+  means = rnorm(7, 0,3)
+  sds   = rnorm(7, 3, 1)
+  
+  X = random.data(450, 7, means = means, sds = sds)
+  Y = random.data(450, 7, means = means, sds = sds)
+  
+  #wasserstein(pp(X), pp(Y))
+  subwasserstein(pp(X), pp(Y), 30, 100)
+}
+fin<- Sys.time() - beg
+fin
 #sample(X, 10)
 ```
 
 
 ```{r}
-create_df = function(n0, n1, k, H0 = F, shuffle = T) {
+create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
     #' Creates a dataframe with samples from the two distributions.
     #' 
     #' @param n0 number of samples from dist0
@@ -151,7 +155,6 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T) {
     n.min = min(n0, n1)
     X0.sample = X0[sample(nrow(X0), n.min), ]
     X1.sample = X1[sample(nrow(X1), n.min), ]
-    d = wasserstein(pp(X0.sample), pp(X1.sample))
 
     X = rbind(X0, X1)
     df = data.frame(X)
@@ -169,12 +172,14 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T) {
     generated$df.train = df.train
     generated$df.test  = df.test
     generated$df = df
-    generated$distance = d
     generated$means = means
     generated$sds = sds
     generated$same.src = H0
     generated$X = X
     generated$y = y
+    
+    if (distance)
+      generated$distance = wasserstein(pp(X0.sample), pp(X1.sample))
     
     return(generated)
 }
@@ -225,17 +230,34 @@ simulate = function(M, n0, n1, k, create.data, H0) {
 }
 ```
 
+We can observe that when the null hypothesis is false then the distribution ov p-values is highly skewed towards 0. In particular we can observe that the p-value is almost always under the $\alpha = 0.05$ threshold.
+```{r H1 simulation, echo=FALSE, warning=FALSE}
 results.H1 = simulate(M, n0, n1, k, create_df, H0=FALSE)
-hist(results.H1, breaks = 20)
+hist(results.H1, 
+     breaks = 20,
+     main='Distribution of p-values when H1 is True',
+     xlab='p-value')
 abline(v=alpha, col = 'orange', lwd=3)
+text(alpha + 0.03, 800, labels = 'α', col='orange')
 ```
 
-```{r H0 simulation, warning=FALSE}
-results.H0 = simulate(M, 200, 200, k, create_df, H0=TRUE)
-hist(results.H0, breaks = 20)
+We observe that when the null hypothesis is True the distribution of p-values is almost uniform, as expected.
+```{r H0 simulation, echo=FALSE, warning=FALSE}
+results.H0 = simulate(M, n0, n1, k, create_df, H0=TRUE)
+hist(results.H0, 
+     breaks = 20,
+     main='Distribution of p-values when H0 is True',
+     xlab='p-value')
 abline(v=alpha, col = 'orange', lwd=3)
+text(alpha + 0.03, 55, labels= 'α', col='orange')
 ```
 
+## Experiment with different parameters
+
+Now we're going to try the same test but with different parameters:
+- the number of features per sample: $k \in \{3, 5, 7\}$
+- the number of samples in total: $N \in \{300, 600, 900\}$
+- whether the data classes are balance or unbalanced, $p$ being the proportion of one class over the total: $p \in \{20\% , 50\%\} $
 
 
 ```{r params simulation, warning=FALSE}
@@ -245,7 +267,6 @@ prop.values = c(0.2, 0.5)
 
 total_params = length(k.values) * length(N.values) * length(prop.values)
 params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
-params.df$it = 1:total_params
 params.df$size  = numeric(total_params)
 params.df$power = numeric(total_params)
 
@@ -254,11 +275,19 @@ for (i in 1:nrow(params.df)) {
   n0 = as.integer(row$N * row$prop)
   n1 = as.integer(row$N - n0)
   
-  row$size = sum(simulate(M, n0, n1, row$k, create_df, H0=TRUE) < 0.05) / M
-  row$power = sum(simulate(M, n0, n1, row$k, create_df, H0=FALSE) > 0.05)/M
+  params.df$size[i] = sum(simulate(M, n0, n1, row$k, create_df, H0=TRUE) < 0.05) / M
+  params.df$power[i] = sum(simulate(M, n0, n1, row$k, create_df, H0=FALSE) < 0.05)/M
 }
+write.csv(params.df, 'params.csv', row.names = FALSE) 
 
 ```
+
+```{r}
+
+plot(k.values, params.df$size[(params.df$N.values == 300) & (params.df$prop == 0.2)], col='', type='l')
+
+```
+
 
 ```{r simulation parallelized, warning=FALSE}
 res = foreach(k=params.df$k, N=params.df$N, prop=params.df$prop, .combine=rbind) %dopar% {
