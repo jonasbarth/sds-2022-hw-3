@@ -16,7 +16,6 @@ output: html_document
 install.packages("dplyr")
 install.packages("pROC")
 install.packages("transport")
-install.packages("InformationValue")
 install.packages("glmnet")
 ```
 
@@ -27,7 +26,7 @@ library('dplyr')
 library('pROC')
 library('transport')
 library('boot')
-library('InformationValue')
+#library('InformationValue')
 library('glmnet') # for regularising our model
 # Parallelization libraries
 library(foreach)
