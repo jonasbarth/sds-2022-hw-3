@@ -225,51 +225,6 @@ simulate = function(M, n0, n1, k, create.data, H0) {
 }
 ```
 
-```{r warning=FALSE}
-create.normal.df = function(n0, n1, k) {
-    #' Creating a dataframe with samples from the same normal distribution.
-    X0 = rnorm(n0 * k, mean = 2, sd = 7)
-    dim(X0) = c(n0, k)
-    y0 = rep(0, n0)
-    
-    X1 = rnorm(n1 * k, mean = 2, sd = 7)
-    dim(X1) = c(n1, k)
-    y1 = rep(1, n1)
-    
-    y = rep(c(0, 1), c(n0, n1))
-    dim(y) = c(n0 + n1, 1)
-    
-    
-    n.min = min(n0, n1)
-    X0.sample = X0[sample(nrow(X0), n.min), ]
-    X1.sample = X1[sample(nrow(X1), n.min), ]
-    d = wasserstein(pp(X0.sample), pp(X1.sample))
-
-    X = rbind(X0, X1)
-    df = data.frame(X)
-    df$label = y
-    df = df[sample(nrow(df), nrow(df)), ]
-    
-    # Train Test split
-    sample <- sample(c(TRUE, FALSE), nrow(df), replace=TRUE, prob=c(0.7,0.3))
-    df.train  <- df[sample, ]
-    df.test   <- df[!sample, ]
-    
-    generated = list()
-    generated$df.train = df.train
-    generated$df.test  = df.test
-    generated$df = df
-    generated$distance = d
-    
-    return(generated)
-}
-
-```
-
-
-
-Sampling from the same distribution still produces many low p-values, meaning that we reject the null-hypothesis many times. This means that we think that the classes come from two **different** distributions even though they come from the same. This is even though the scores produced by the classifier appear to be similar as shown in the histogram below.
-```{r H1 simulation, warning=FALSE}
 results.H1 = simulate(M, n0, n1, k, create_df, H0=FALSE)
 hist(results.H1, breaks = 20)
 abline(v=alpha, col = 'orange', lwd=3)
