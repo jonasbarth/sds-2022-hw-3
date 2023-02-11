@@ -21,6 +21,7 @@ install.packages("doParallel")
 install.packages("foreach")
 install.packages("iterators")
 install.packages("doParallel")
+install.packages("ggplot2")
 ```
 
 
