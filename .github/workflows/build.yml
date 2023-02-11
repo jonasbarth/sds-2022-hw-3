@@ -23,4 +23,5 @@ jobs:
           git add main.html
           git commit -m 'Build of main.rmd' || echo "No changes to commit"
           git remote set-url --push origin https://jonasbarth:$GITHUB_TOKEN@github.com/sds-2022-hw-3
+          git push
 
