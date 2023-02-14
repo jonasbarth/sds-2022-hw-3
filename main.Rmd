@@ -15,10 +15,6 @@ output: html_document
 ```{r include=FALSE}
 install.packages("dplyr")
 install.packages("transport")
-install.packages("doParallel")
-install.packages("foreach")
-install.packages("iterators")
-install.packages("doParallel")
 install.packages("ggplot2")
 ```
 
@@ -28,11 +24,6 @@ load("hw3_data.RData")
 library('dplyr')
 library('transport')
 library('ggplot2')
-# Parallelization libraries
-library(foreach)
-library(iterators)
-library(doParallel) 
-registerDoParallel(cores = detectCores())
 ```
 
 
