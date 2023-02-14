@@ -336,6 +336,48 @@ performance.summary |>
 
 
 
+# 4.
+```{r}
+f <- function(...) {
+  l = list(...)
+  
+  lapply(l, function(el, label) print(label))
+}
+
+f(men = 1, w = 2)
+```
+
+
+
+```{r}
+apply_per_time <- function(data, func) 
+  data |>
+    lapply(function(patient) sapply(patient, func)) |> 
+    data.frame() |>
+    t() |>
+    data.frame() 
+
+extract_feat_ts <- function(data, ...)  {
+  func.list = list(...)
+  
+  func.list |>
+    lapply(function(func) apply_per_time(data, func)) %>%
+    do.call(cbind.data.frame, . )
+  }
+
+```
+
+
+```{r}
+asd_data |>
+  extract_feat_ts(
+    mean = mean,
+    median = median,
+    max = max,
+    min = min,
+    sd  = sd
+  )
+```
 
 
 # 1. Load and pool {#load-and-pool-data}
