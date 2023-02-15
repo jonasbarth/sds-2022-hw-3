@@ -417,6 +417,20 @@ extract_feat_ts <- function(data, ...)  {
 
 ```
 
+```{r}
+jump <- function(x, func=mean) {
+  #' Applies a function to the difference of each element with the next one 
+  #' @param x an array of data
+  #' @param func the function that should be applied
+  L = length(x)
+  
+  func(x[1:(L-1)] - x[2:L])
+}
+
+jump(asd_data[[1]][[2]], median)
+```
+
+
 
 ```{r}
 asd_data |>
