@@ -433,14 +433,30 @@ jump(asd_data[[1]][[2]], median)
 
 
 ```{r}
-asd_data |>
+#' Extracts a certain number of feature from the ASD or TD dataset
+ts.feature.engine = function(data, label=1) data %>%
   extract_feat_ts(
-    mean = mean,
+    mean   = mean,
     median = median,
-    max = max,
-    min = min,
-    sd  = sd
-  )
+    max    = max,
+    min    = min,
+    sd     = sd,
+    perc.95= . %>% quantile(.95),
+    perc.05= . %>% quantile(.05),
+    jump.sd    = . %>% jump(sd),
+    jump.avg   = . %>% jump(mean),
+    jump.median= . %>% jump(median)
+  ) |>
+  cbind(label=label)
+
+asd.ts.feat = ts.feature.engine(asd_data, label=1)
+td.ts.feat  = ts.feature.engine(td_data,  label=0)
+ts.feat = rbind(asd.ts.feat, td.ts.feat)
+ts.feat = ts.feat[-ncol(ts.feat)] %>%
+  scale() %>%
+  as.data.frame() %>%
+  cbind(ts.feat[ncol(ts.feat)])
+```
 ```
 
 
