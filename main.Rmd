@@ -41,7 +41,12 @@ sample sizes
 Finally, summarise results.
 
 ## Setting up parameters {#parameter-setup}
-We set up the following parameters for the **simulation study**. We will sample from an **exponential** and from a **normal** distribution, which require the parameters $\labmda, \mu, \sigma$ to be set. We also define the simulation size $M$, the number of dimensions $k$ for each distribution, and the number of samples from each distribution, $n0$ and $n1$ respectively.
+We set up the following parameters for the **simulation study**.
+
+- the simulation size $M$.
+- the number of dimensions $k$ for each distribution.
+- the number of samples from each distribution, $n0$ and $n1$ respectively.
+- the confidence level $\alpha$.
 ```{r hyperparameters}
 M = 1e3
 P = 10
@@ -50,17 +55,23 @@ k = 5
 n0 = 100
 n1 = 150
 
-lambda = 0.5
-mu = 1 / lambda
-sigma = mu
+alpha = 0.05
 ```
 
 ## Creating Data {#creating-data}
+In this section, we have functions for creating random distributions that will be used in the simulation study. The `random.distro` function let's us draw **univariate** data from a randomly chosen distribution with a determined *mean* and *standard deviation*. To generate a **k-variate** distribution, we call `random.distro` multiple times in the `random.data` function.
 ```{r}
 random.distro <- function(n, mean = 1, sd = 1, noisiness = sd * 0.5, eps = 1e-5) {
-  #' Generates a univariate random distribution with n samples.
+  #' Generates a univariate random noisy distribution with n samples.
+  #' 
+  #' @param n the number of samples to be generated
+  #' @param mean the mean of the population to draw samples from
+  #' @param sd the standard deviation of the population to draw samples from
+  #' @param noisiness the standard deviation of the gaussian noise to be added
+  #' @param eps 
+  #' 
+  #' @return a vector of data sampled from a randomly chosen distribution with the provided mean and standard deviation, and with added noise.
   rd <- sample(1:5, 1)[[1]]
-  #print(rd)
 
   if (rd==1) {
     rate = 1 / sd
@@ -71,12 +82,6 @@ random.distro <- function(n, mean = 1, sd = 1, noisiness = sd * 0.5, eps = 1e-5)
     shape = (mean/sd)^2
     scale = sd / sqrt(shape)
     X = rgamma(n, shape, scale = scale)
-#  } else if (rd == 4) {
-#    mean = min(abs(mean), 1-eps)
-#    nu = mean * (1-mean) / sd^2 - 1
-#    alpha = mean * nu
-#    beta  = (1-mean) * nu
-#    X = rbeta(n, alpha, beta)
   } else if (rd == 4) {
     sd = max(sqrt(2) + eps, sd)
     df = 2 * sd^2 / (sd^2 - 1)
@@ -93,6 +98,13 @@ random.distro <- function(n, mean = 1, sd = 1, noisiness = sd * 0.5, eps = 1e-5)
 
 random.data <- function(n, k, means = rnorm(k, 0, 3), sds = rnorm(k, 3, 1)) {
   #' Generates a single k-variate random distribution with n samples.
+  #' 
+  #' @param n the number of samples to generate
+  #' @param k the number of dimensions the generated data will have
+  #' @param means a vector of k mean values, one per dimension
+  #' @param sds a vector of standard deviations, one per dimension
+  #' 
+  #' @return a dataframe of random data with n rows and k columns.
   cols = list()
   for (i in 1:k) {
     mean = means[i]
@@ -123,7 +135,7 @@ fin
 #sample(X, 10)
 ```
 
-
+The `create_df` function builds upon the previous functions data generating functions. It generates a dataframe with data drawn from either two separate distributions, or the same distribution. This function is used in the simulation loop and the data returned from it is used to train the **classifier**. 
 ```{r}
 create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
     #' Creates a dataframe with samples from the two distributions.
@@ -131,9 +143,11 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
     #' @param n0 number of samples from dist0
     #' @param n1 number of samples from dist1
     #' @param k  number of features
-    #' @param H0 
+    #' @param H0 if TRUE, all samples will come from the same distribution, if FALSE samples will come from two separate distributions.
+    #' @param shuffle if TRUE the data will be randomly shuffled, if FALSE data for the two classes will be grouped in the dataframe.
+    #' @param distance if TRUE, the Wasserstein distance between the distributions will be added to the list.
     #' 
-    #' @return a dataframe with n0 samples from dist0, n1 samples from dist1, and a label column.
+    #' @return a list with a dataframe with n0 samples from dist0, n1 samples from dist1, and a label column, a train-test split of the data, the means and standard deviations of each of the features.
     
     means = rnorm(k, 0, 10)
     sds   = rnorm(k, 3, 1)
@@ -185,14 +199,8 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
 ```
 
 
-
 ## Simulation Loop {#simulation-loop}
 ```{r simulation loop}
-alpha = 0.05
-tests = integer(M)
-dists = numeric(M)
-results = vector(length = M)
-
 simulate = function(M, n0, n1, k, create.data, H0) {
     #' Simulates operating characteristics of a testing procedure for two distributions.
     #' @param M the number of simulations
@@ -254,9 +262,10 @@ text(alpha + 0.03, 55, labels= 'α', col='orange')
 ## Experiment with different parameters
 
 Now we're going to try the same test but with different parameters:
+
 - the number of features per sample: $k \in \{3, 5, 7\}$
 - the number of samples in total: $N \in \{300, 600, 900\}$
-- whether the data classes are balance or unbalanced, $p$ being the proportion of one class over the total: $p \in \{20\% , 50\%\} $
+- whether the data classes are balance or unbalanced, $p$ being the proportion of one class over the total: $p \in \{20\% , 50\%\}$
 
 
 ```{r experiment new params simulation, eval=FALSE, warning=FALSE}
