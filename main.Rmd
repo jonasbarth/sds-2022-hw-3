@@ -179,14 +179,7 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
     if (shuffle)
       df = df[sample(nrow(df), nrow(df)), ]
     
-    # Train Test split
-    sample <- sample(c(TRUE, FALSE), nrow(df), replace=TRUE, prob=c(0.7,0.3))
-    df.train  <- df[sample, ]
-    df.test   <- df[!sample, ]
-    
     generated = list()
-    generated$df.train = df.train
-    generated$df.test  = df.test
     generated$df = df
     generated$means = means
     generated$sds = sds
@@ -201,6 +194,51 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
 }
 ```
 
+
+
+```{r}
+train.test.split <- function(df, train.perc = 0.7) {
+  #' Splits a dataframe in two 
+  #' @param df the dataframe to be splitted
+  #' @param train.perc the percentage of rows that will be in the train split
+  #' 
+  #' @return a list containing **test** and **train** items, each containing a part of the original dataframe
+    sample <- sample(c(TRUE, FALSE), nrow(df), replace=TRUE, prob=c(train.perc, 1 - train.perc))
+    res = list()
+    res$train  <- df[sample, ]
+    res$test   <- df[!sample, ]
+    return(res)
+}
+
+friedman.test <- function(df, alpha = 1) {
+  #' Performs a single Friedman test on the dataframe, using ElasticNet regression
+  #' 
+  #' @param df the dataframe holding the data, the column "label" is expected to hold the target variable
+  #' @param alpha same as alpha for `glmnet`
+  #' 
+  #' @return a list containing:
+  #'  - `p.value` : the p-value of the test
+  #'  - `model`   : the trained model
+    df = train.test.split(df)
+  
+    L = ncol(df$train)
+    X.test = df$test[,1:(L-1)] |> as.matrix()
+    X.train = df$train[,1:(L-1)] |> as.matrix()
+    y.train = df$train$label 
+    
+    model = glmnet(X.train, y.train, alpha=alpha, family=binomial)
+    y_pred = predict(model, X.test, type='response')
+
+    # get the predicted scores for both classes
+    y_pred_class_1 = y_pred[df$test$label == 1]
+    y_pred_class_0 = y_pred[df$test$label == 0]
+  
+    result = list()
+    result$p.value = wilcox.test(y_pred_class_0, y_pred_class_1)$p.value
+    result$model = model
+    return(result)
+}
+```
 
 ## Simulation Loop {#simulation-loop}
 The `simulate` function runs $M$ number of simulations to find the **p-value**, **size** and **power** of the **Wilcox** two sample test. In each simulation, we:
@@ -228,26 +266,10 @@ simulate = function(M, n0, n1, k, create.data, H0) {
 
     for (i in 1:M) {
         generated = create.data(n0, n1, k, H0 = H0)
-        df = generated$df
-        df.train = generated$df.train
-        df.test  = generated$df.test
         
-        distance = generated$distance
+        res = friedman.test(generated$df)
         
-        # train the logistic regression model
-        model = glm(formula=label ~ ., data=df.train, family=binomial)
-        
-        X.test = df.test[,1:k]
-        y_pred = predict(model, df.test, type='response')
-        df.test$y_pred = y_pred
-        
-        # get the predicted scores for both classes
-        y_pred_class_1 = df.test[df.test$label == 1,"y_pred"]
-        y_pred_class_0 = df.test[df.test$label == 0,"y_pred"]
-
-        result = wilcox.test(y_pred_class_0, y_pred_class_1)
-        
-        results[i] = result$p.value
+        results[i] = res$p.value
     }
     return(results)
 }
