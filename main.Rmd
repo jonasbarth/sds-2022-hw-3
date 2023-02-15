@@ -457,6 +457,13 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
   as.data.frame() %>%
   cbind(ts.feat[ncol(ts.feat)])
 ```
+
+
+
+```{r}
+f.test = friedman.test(ts.feat)
+f.test$p.value
+```
 ```
 
 
