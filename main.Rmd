@@ -464,7 +464,28 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
 f.test = friedman.test(ts.feat)
 f.test$p.value
 ```
+
+```{r}
+theta = coef(f.test$model) |> as.matrix() |> as.data.frame()
+
+importance = theta$s99 %>% abs() 
+top.10 = importance > quantile(importance, 0.95)
+# set intercept to False
+top.10[1] = FALSE
+
+theta$feature_name = row.names.data.frame(theta)
+
+theta[top.10, ] |>
+  ggplot(aes(x = reorder(feature_name, abs(s99)), y = s99)) +
+  geom_col() +
+  coord_flip()
 ```
+
+
+```{r}
+plot(f.test$model, xvar='lambda')
+```
+
 
 
 # 1. Load and pool {#load-and-pool-data}
