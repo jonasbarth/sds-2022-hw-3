@@ -200,14 +200,24 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
 
 
 ## Simulation Loop {#simulation-loop}
+The `simulate` function runs $M$ number of simulations to find the **p-value**, **size** and **power** of the **Wilcox** two sample test. In each simulation, we:
+
+1. Create a **k-variate** dataset.
+1. Split the dataset into **train** and **test** sets.
+1. Train a **Logistic Regression** model on the **train set**.
+1. Get the predicted scores of the model on the **test set**.
+1. Feed the predicted scores for class 0 and class 1 samples to the **Wilcox** test.
+1. Save the **p-value** returned by the **Wilcox** test.
+
 ```{r simulation loop}
 simulate = function(M, n0, n1, k, create.data, H0) {
     #' Simulates operating characteristics of a testing procedure for two distributions.
+    #' 
     #' @param M the number of simulations
     #' @param n0 the number of samples to draw from the first distribution.
     #' @param n1 the number of samples to draw from the second distribution.
     #' @param k the number of features in each distribution.
-    #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k.
+    #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k, H0.
     #' @return a result vector with p-values from the testing procedure.
     
     results = vector(length = M)
@@ -220,12 +230,15 @@ simulate = function(M, n0, n1, k, create.data, H0) {
         df.test  = generated$df.test
         
         distance = generated$distance
-
+        
+        # train the logistic regression model
         model = glm(formula=label ~ ., data=df.train, family=binomial)
         
         X.test = df.test[,1:k]
         y_pred = predict(model, df.test, type='response')
         df.test$y_pred = y_pred
+        
+        # get the predicted scores for both classes
         y_pred_class_1 = df.test[df.test$label == 1,"y_pred"]
         y_pred_class_0 = df.test[df.test$label == 0,"y_pred"]
 
@@ -307,6 +320,7 @@ prop.values = sort(unique(performance$prop))
 params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
 ```
 
+
 ```{r}
 performance$prop = ifelse(performance$prop == 0.2, 'Imbalanced 20-80', 'Balanced 50-50')
 
@@ -346,7 +360,7 @@ performance.summary |>
 
 
 # 4.
-```{r}
+```{r eval=FALSE}
 f <- function(...) {
   l = list(...)
   
