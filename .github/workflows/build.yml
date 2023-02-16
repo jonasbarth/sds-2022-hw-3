@@ -13,7 +13,7 @@ jobs:
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
       - name: install rmarkdown
-        run: Rscript -e 'install.packages("rmarkdown")'
+        run: Rscript install_packages.R
       - name: Render my document to html
         run: Rscript -e 'rmarkdown::render("main.Rmd", output_format = "html_document")'
       - name: Commit results

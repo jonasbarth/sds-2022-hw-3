@@ -1,0 +1,5 @@
+install.packages("rmarkdown")
+install.packages("dplyr")
+install.packages("transport")
+install.packages("ggplot2")
+install.packages('glmnet')

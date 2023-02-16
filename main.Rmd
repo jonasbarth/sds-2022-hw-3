@@ -18,14 +18,6 @@ output: html_document
     
 
 # Setup
-```{r include=FALSE}
-install.packages("dplyr")
-install.packages("transport")
-install.packages("ggplot2")
-install.packages('glmnet')
-```
-
-
 ```{r setup, include=FALSE}
 load("hw3_data.RData")
 library('dplyr')
@@ -230,7 +222,6 @@ friedman.test <- function(df, alpha = 1) {
     X.test = df$test[,1:(L-1)] |> as.matrix()
     X.train = df$train[,1:(L-1)] |> as.matrix()
     y.train = df$train$label 
-    
     
     model = cv.glmnet(X.train, y.train, alpha=alpha, family="binomial", type.measure="class")
     y_pred = predict(model, newx=X.test, s="lambda.min")
