@@ -118,23 +118,6 @@ random.data(10,10)
 ```
 
 
-```{r}
-beg <- Sys.time()
-for (i in 1: 100) {
-  means = rnorm(7, 0,3)
-  sds   = rnorm(7, 3, 1)
-  
-  X = random.data(450, 7, means = means, sds = sds)
-  Y = random.data(450, 7, means = means, sds = sds)
-  
-  #wasserstein(pp(X), pp(Y))
-  subwasserstein(pp(X), pp(Y), 30, 100)
-}
-fin<- Sys.time() - beg
-fin
-#sample(X, 10)
-```
-
 The `create_df` function builds upon the previous functions data generating functions. It generates a dataframe with data drawn from either two separate distributions, or the same distribution. This function is used in the simulation loop and the data returned from it is used to train the **classifier**. 
 ```{r}
 create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
@@ -464,7 +447,7 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
 
 ## Simulation {#fmri-simulation}
 We run the Friedman test on the engineered fMRI data for $M = 100$ times to get a range of p-values. The two stochastic sources in the simulation are the **train-test** split of the data as well as the regularisation parameter $\lambda$ used by the `glmnet` package.
-```{r}
+```{r warning=FALSE}
 M = 1e2
 feature.importances = data.frame()
 p.values = numeric(M)
