@@ -231,8 +231,9 @@ friedman.test <- function(df, alpha = 1) {
     X.train = df$train[,1:(L-1)] |> as.matrix()
     y.train = df$train$label 
     
-    model = glmnet(X.train, y.train, alpha=alpha, family=binomial)
-    y_pred = predict(model, X.test, type='response')
+    
+    model = cv.glmnet(X.train, y.train, alpha=alpha, family="binomial", type.measure="class")
+    y_pred = predict(model, newx=X.test, s="lambda.min")
 
     # get the predicted scores for both classes
     y_pred_class_1 = y_pred[df$test$label == 1]
