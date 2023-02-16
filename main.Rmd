@@ -19,6 +19,7 @@ output: html_document
 install.packages("dplyr")
 install.packages("transport")
 install.packages("ggplot2")
+install.packages('glmnet')
 ```
 
 
@@ -27,6 +28,7 @@ load("hw3_data.RData")
 library('dplyr')
 library('transport')
 library('ggplot2')
+library('glmnet')
 ```
 
 
@@ -434,7 +436,7 @@ jump <- function(x, func=mean) {
   #' @param func the function that should be applied
   L = length(x)
   
-  func(x[1:(L-1)] - x[2:L])
+  func(x[2:L] - x[1:(L-1)])
 }
 
 jump(asd_data[[1]][[2]], median)
@@ -486,9 +488,18 @@ top.10[1] = FALSE
 theta$feature_name = row.names.data.frame(theta)
 
 theta[top.10, ] |>
-  ggplot(aes(x = reorder(feature_name, abs(s99)), y = s99)) +
+  ggplot(aes(
+    x = reorder(feature_name, abs(s99)), 
+    y = s99,
+    fill = ifelse(sign(s99) == 1, 'TD', 'ASD'))) +
   geom_col() +
-  coord_flip()
+  coord_flip() +
+  labs(
+    x = '',
+    y = 'Weight',
+    title = 'Feature importance',
+    fill  = ''
+  )
 ```
 
 
