@@ -11,7 +11,10 @@ output: html_document
     - [Creating Data](#creating-data)
     - [Simulation Loop](#simulation-loop)
     - [Different Parameters](#different-parameters)
-- [fMRI Data Test](#fmri-data)
+- [Friedman fMRI Data](#fmri-data)
+    - [Feature Engineering](#feature-engineering)
+    - [Simulation](#fmri-simulation)
+    - [Feature Importance](#fmri-feature-importance)
     
 
 # Setup
@@ -388,9 +391,10 @@ performance.summary |>
 
 
 
-# 4. {#fmri-data}
+# 4. Friedman fMRI Data {#fmri-data}
 
 ## Feature Engineering {#feature-engineering}
+Below are functions for helping us to engineer some features for the **fMRI** dataset. We chose to engineer features across the **time dimension**, such that each brain region is still distinguishable from the others.
 ```{r}
 #' Applies a certain function to all the time-series columns in a df
 apply_per_time <- function(data, func) 
@@ -415,6 +419,7 @@ extract_feat_ts <- function(data, ...)  {
 
 ```
 
+The `jump` function applies a function to the **difference** between brain regions.
 ```{r}
 jump <- function(x, func=mean) {
   #' Applies a function to the difference of each element with the next one 
@@ -425,6 +430,19 @@ jump <- function(x, func=mean) {
   func(x[2:L] - x[1:(L-1)])
 }
 ```
+
+We chose to extract the following features from the fMRI data for each brain region:
+
+- *mean* over time.
+- *median* over time.
+- *max* over time.
+- *min* over time.
+- *standard deviation* over time.
+- *95th percentile* over time.
+- *5th percentile* over time.
+- *jump of standard deviations* over time.
+- *jumps of means* over time.
+- *jumps of medians* over time.
 
 ```{r}
 #' Extracts a certain number of feature from the ASD or TD dataset
@@ -452,12 +470,17 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
   cbind(ts.feat[ncol(ts.feat)])
 ```
 
-## Simulation
+```{r}
+friedman.test(ts.feat)
+```
+
+
+## Simulation {#fmri-simulation}
 We run the Friedman test on the engineered fMRI data for $M = 100$ times to get a range of p-values. The two stochastic sources in the simulation are the **train-test** split of the data as well as the regularisation parameter $\lambda$ used by the `glmnet` package.
 ```{r}
 M = 1e2
 feature.importances = data.frame()
-p.values = numeric
+p.values = numeric(M)
 
 for (i in 1:M) {
   f.test = friedman.test(ts.feat)
@@ -480,7 +503,8 @@ abline(v=alpha, col = 'orange', lwd=3)
 text(alpha + 0.03, 55, labels= 'α', col='orange')
 ```
 
-
+## Feature Importance {#fmri-feature-importance}
+We would also like to see which of the engineered features are more important for the model. More influential features tend to have higher weights, so we choose the features with weights that are in the 95th percentile. 
 ```{r}
 feature.means = lapply(feature.importances, mean) |> as.data.frame() |> t() |> as.data.frame()
 feature.means$feature_name = row.names(feature.means)
