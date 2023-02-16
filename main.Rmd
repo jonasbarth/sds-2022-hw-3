@@ -304,10 +304,10 @@ Now we're going to try the same test but with different parameters:
 - whether the data classes are balance or unbalanced, $p$ being the proportion of one class over the total: $p \in \{20\% , 50\%\}$
 
 
-```{r experiment new params simulation, eval=FALSE, warning=FALSE}
+```{r experiment new params simulation, warning=FALSE}
 k.values = seq(3, 7)
-N.values = seq(300, 2000, by = 100)
-prop.values = c(0.2, 0.5)
+N.values = seq(200, 2000, by = 200)
+prop.values = c(0.5)
 
 total_params = length(k.values) * length(N.values) * length(prop.values)
 params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
@@ -329,13 +329,13 @@ for (i in 1:nrow(params.df)) {
     ),
     performance
   )
-  write.csv(performance, 'performance.csv', row.names = FALSE) 
+  #write.csv(performance, 'performance.csv', row.names = FALSE) 
 }
 
 ```
 
 ```{r load performance data from disk, include=FALSE}
-performance = read.csv('performance.csv')
+#performance = read.csv('performance.csv')
 
 k.values = sort(unique(performance$k))
 N.values = sort(unique(performance$N))
@@ -461,11 +461,6 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
   as.data.frame() %>%
   cbind(ts.feat[ncol(ts.feat)])
 ```
-
-```{r}
-friedman.test(ts.feat)
-```
-
 
 ## Simulation {#fmri-simulation}
 We run the Friedman test on the engineered fMRI data for $M = 100$ times to get a range of p-values. The two stochastic sources in the simulation are the **train-test** split of the data as well as the regularisation parameter $\lambda$ used by the `glmnet` package.
