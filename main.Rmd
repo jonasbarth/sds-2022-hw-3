@@ -317,9 +317,7 @@ for (i in 1:nrow(params.df)) {
 
 
 
-```{r load performance data from disk, include=FALSE}
-#performance = read.csv('performance.csv')
-
+```{r prepare values for plotting, include=FALSE}
 k.values = sort(unique(performance$k))
 N.values = sort(unique(performance$N))
 prop.values = sort(unique(performance$prop))
@@ -327,7 +325,7 @@ params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
 ```
 
 The plot below shows the **size** of the test, i.e. the probability of observing a **Type 1 Error** (false positive) as a function of the **number of features** $k$, and the **number of samples**. Each circle is the **average p-value** of $M$ simulations. We see that the probability of a false discovery, i.e. thinking that the data does **NOT** come from two **separate distributions** when it actually does is within a range of $0.035$ and $0.07$. The probabilities are mostly the same, irregardless of the of the number of features, number of samples, and class imbalances.
-```{r}
+```{r echo=FALSE}
 performance.summary = performance |>
   group_by(k, N) |>
   dplyr::summarise(
@@ -350,7 +348,7 @@ performance.summary |>
 
 The plot below shows the **power** of the test, i.e. observing a **true positive** (complement of false negative) as a function of the **number of features** $k$, and the **number of samples**. Again, each circle is the **average p-value** of $M$ simulations. Here we can see that the probability of correctly rejecting the null hypothesis when it is false increases with the number of features and somewhat with the number of samples. For $k=3$, the probability of a **true discovery** ranges from $0.75$ to $0.85$, however for $k=7$ it is between $0.95$ and $1.0$, indicating a positive relationship between the two variables. This could be explained by the fact that as the number of dimensions increase, the amount of useful information encoded in them which helps the Logistic Regression model separate the classes also increases. Additionally, we also observe that **p-values** for smaller samples as indicated by **darker** circles cluster more towards the lower end of the probability interval for a specific value of $k$. E.g. for $k=6$, darker circles are more concentrated towards the bottom.
 
-```{r}
+```{r echo=FALSE}
 performance.summary |>
   ggplot(
     aes(x=k, y = type.two)
@@ -369,7 +367,7 @@ performance.summary |>
 
 ## Feature Engineering {#feature-engineering}
 Below are functions for helping us to engineer some features for the **fMRI** dataset. We chose to engineer features across the **time dimension**, such that each brain region is still distinguishable from the others.
-```{r}
+```{r fmri data engineering functions}
 #' Applies a certain function to all the time-series columns in a df
 apply_per_time <- function(data, func) 
   data |>
@@ -394,7 +392,7 @@ extract_feat_ts <- function(data, ...)  {
 ```
 
 The `jump` function applies a function to the **difference** between brain regions.
-```{r}
+```{r jump function}
 jump <- function(x, func=mean) {
   #' Applies a function to the difference of each element with the next one 
   #' @param x an array of data
@@ -418,7 +416,7 @@ We chose to extract the following features from the fMRI data for each brain reg
 - *jumps of means* over time.
 - *jumps of medians* over time.
 
-```{r}
+```{r feature engineering}
 #' Extracts a certain number of feature from the ASD or TD dataset
 ts.feature.engine = function(data, label=1) data %>%
   extract_feat_ts(
@@ -446,7 +444,7 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
 
 ## Simulation {#fmri-simulation}
 We run the Friedman test on the engineered fMRI data for $M = 100$ times to get a range of p-values. The two stochastic sources in the simulation are the **train-test** split of the data as well as the regularisation parameter $\lambda$ used by the `glmnet` package.
-```{r warning=FALSE}
+```{r fmri simulation, warning=FALSE}
 M = 1e2
 feature.importances = data.frame()
 p.values = numeric(M)
@@ -462,7 +460,7 @@ colnames(feature.importances) = row.names(theta)
 ```
 
 The histogram below shows the frequency of p-values from the simulations. We can see that most p-values are **below** the threshold $\alpha = 0.05$, which means that our procedure says that the TD and ASD data come from **different** distributions most of the time. Therefore, we cannot exclude that they come from different distributions. 
-```{r}
+```{r echo=FALSE}
 hist(p.values, breaks = 50,
      main = paste("p-values for fMRI Data, M =", M),
      xlab = "p-value",
@@ -474,16 +472,15 @@ text(alpha + 0.03, 55, labels= 'α', col='orange')
 
 ## Feature Importance {#fmri-feature-importance}
 We would also like to see which of the engineered features are more important for the model. More influential features tend to have higher weights, so we choose the features with weights that are in the 95th percentile. 
-```{r}
+```{r feature importance}
 feature.means = lapply(feature.importances, mean) |> as.data.frame() |> t() |> as.data.frame()
 feature.means$feature_name = row.names(feature.means)
 threshold = feature.means[[1]] %>% abs() %>% quantile(0.95)
 top.10 = feature.means[feature.means[[1]] > threshold, ]
 ```
 
-
 Jumps seem more important for identifying ASD subjects.
-```{r}
+```{r echo=FALSE}
 top.10 |>
   ggplot(aes(
     x = reorder(feature_name, abs(top.10[[1]])), 
