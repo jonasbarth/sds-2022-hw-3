@@ -13,9 +13,7 @@ output: html_document
     - [Different Parameters](#different-parameters)
 - [Friedman fMRI Data](#fmri-data)
     - [Feature Engineering](#feature-engineering)
-    - [Simulation](#fmri-simulation)
-    - [Feature Importance](#fmri-feature-importance)
-    
+    - [Simulation](#fmri-friedman-test)
 
 # Setup
 ```{r setup, include=FALSE}
@@ -26,6 +24,7 @@ library('ggplot2')
 library('glmnet')
 library(foreach)
 library(doParallel)
+library(e1071)
 ```
 
 
@@ -175,34 +174,23 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
 ```
 
 ```{r include=FALSE}
-totalCores = detectCores()
-
-cluster <- makeCluster(totalCores[1]-1) 
-registerDoParallel(cluster)
-
-df = create_df(100, 150, k, H0=F)$df
-
-start = Sys.time()
-a = produce.test.statistic(df, 10000)
-Sys.time() - start
-
-#Run forloop in Parallel
-start = Sys.time()
-x <- foreach(i = 1:10000, .combine=c) %dopar% {
-  permuted.df = permute.labels(df)
-  
-  model = glm(formula=label ~ ., data=permuted.df, family=binomial)
-  y_pred = predict(model, permuted.df, type='response')
-  
-  permuted.df$y_pred = y_pred
-  
-  y_pred_class_1 = permuted.df[permuted.df$label == 1, "y_pred"]
-  y_pred_class_0 = permuted.df[permuted.df$label == 0, "y_pred"]
-  
-  result = ks.test(y_pred_class_0, y_pred_class_1)
-  result$statistic
+produce.test.statistics.par = function(df, p) {
+  test.statistics <- foreach(i = 1:p, .combine=c, .packages="e1071", .export="permute.labels") %dopar% {
+    permuted.df = permute.labels(df)
+    
+    model = svm(label ~ ., data=permuted.df, kernel="sigmoid", shrinking=FALSE, probability=TRUE)
+    y_pred = predict(model, permuted.df)
+    
+    permuted.df$y_pred = y_pred
+    
+    y_pred_class_1 = permuted.df[permuted.df$label == 1, "y_pred"]
+    y_pred_class_0 = permuted.df[permuted.df$label == 0, "y_pred"]
+    
+    result = ks.test(y_pred_class_0, y_pred_class_1)
+    result$statistic
+  }
+  return(list(statistics=test.statistics, pred=y_pred))
 }
-Sys.time() - start
 ```
 
 
@@ -247,7 +235,7 @@ produce.test.statistic = function(df, p) {
     result = ks.test(y_pred_class_0, y_pred_class_1)
     test.statistics[i] = result$statistic
   }
-  return(test.statistics)
+  return(list(statistics=test.statistics, pred=y_pred))
 }
 
 
@@ -256,12 +244,32 @@ train.predict = function(df) {
   #' 
   #' @param df a dataframe with a label column
   #' @return the dataframe with a y_pred column including the prediciton scores.
-  model = glm(formula=label ~ ., data=df, family=binomial, maxit=1e3)
-  y_pred = predict(model, df, type='response')
+  model = svm(label ~ ., data=df, kernel="sigmoid", shrinking=FALSE, probability=TRUE)
+  y_pred = predict(model, df)
     
   df$y_pred = y_pred
     
   return(df)
+}
+
+friedman.test.permute.par = function(df, alpha = 0.05, p = 1e2) {
+  #' Running the Friedman test with permutation
+  #' @param df the dataframe to run the Friedman test on. Must have a label column.
+  #' @param alpha the alpha value to calculate the test statistic at.
+  #' @param p the number of permutations to run
+  #' @return a list of the original statistic and the permuted statistic at quantile alpha-
+  original.predictions = train.predict(df)
+  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
+  y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
+  original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
+  
+  test.statistics = produce.test.statistics.par(df, p)
+  y.pred = test.statistics$pred
+  test.statistics = test.statistics$statistics
+  
+  p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
+  
+  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=y.pred))
 }
 
 friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
@@ -276,10 +284,12 @@ friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
   original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
   
   test.statistics = produce.test.statistic(df, p)
-
+  y.pred = test.statistics$pred
+  test.statistics = test.statistics$statistics
+  
   p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
   
-  return(p.value)
+  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=y.pred))
 }
 ```
 
@@ -304,7 +314,7 @@ simulate.par = function(M, n0, n1, k, create.data, H0) {
     #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k, H0.
     #' @return a result vector with p-values from the testing procedure.
     
-    results = foreach(i = 1:M, .combine=c, .packages = "random.data") %dopar% {
+    results = foreach(i = 1:M, .combine=c, .packages = "e1071", .export = c("random.data", "random.distro", "friedman.test.permute", "train.predict", "produce.test.statistic", "permute.labels")) %dopar% {
         generated = create.data(n0, n1, k, H0 = H0)
         
         p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
@@ -332,7 +342,7 @@ simulate = function(M, n0, n1, k, create.data, H0) {
     for (i in 1:M) {
         generated = create.data(n0, n1, k, H0 = H0)
         
-        p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+        p.value = friedman.test.permute.par(generated$df, alpha = alpha, p = n0 + n1)
         
         results[i] = p.value
     }
@@ -345,13 +355,18 @@ simulate = function(M, n0, n1, k, create.data, H0) {
 We can observe that when the null hypothesis is false, i.e. when the data comes from two **separate** distributions, then the distribution of p-values is **highly skewed** towards $0$. In particular we can observe that the p-value is **almost always** under the $\alpha = 0.05$ threshold. This happens because the scores generated by the *Logistic Regression* classifier are distributed in a way which makes it highly likely that they come from **separate** distributions.
 
 ```{r H1 simulation, echo=FALSE, warning=FALSE}
-results.H1 = foreach(i = 1:M, .combine=c) %dopar% {
-  generated = create_df(n0, n1, k, H0 = FALSE)
-  
-  p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
-  p.value
-}
-h1.hist = hist(results.H1, 
+totalCores = detectCores()
+
+cluster <- makeCluster(totalCores[1]-1) 
+registerDoParallel(cluster)
+
+
+
+results.H1 = simulate(M, n0, n1, k, create_df, H0 = FALSE)
+results.H1[2]
+H1.p.values = sapply(results.H1, function(res) res$p)
+
+h1.hist = hist(results.H1$statistics, 
      breaks = 20,
      main='Distribution of p-values when H1 is True',
      xlab='p-value')
@@ -543,71 +558,33 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
   cbind(ts.feat[ncol(ts.feat)])
 ```
 
-## Simulation {#fmri-simulation}
-We run the Friedman test on the engineered fMRI data for $M = 100$ times to get a range of p-values. The two stochastic sources in the simulation are the **train-test** split of the data as well as the regularisation parameter $\lambda$ used by the `glmnet` package.
+## fMRI Friedman Test {#fmri-friedman-test}
+We run the Friedman test on the engineered fMRI data with $p = 1000$ permutations. We are using the Support Vector Machine (SVM) classifier to help combat overfitting.
 
 If the original calculated value is **greater** than the $1 - \alpha$ quantile, then the H0 can be rejected.
 ```{r fmri simulation, warning=FALSE}
-M = 1e2
-feature.importances = data.frame()
-p.values = numeric(M)
+totalCores = detectCores()
 
-friedman.permuted = matrix(NA, nrow = M, ncol = 2)
-colnames(friedman.permuted) = c("original", "permuted")
-#friedman.test.permute(ts.feat, alpha = 0.05, 1000)
+cluster <- makeCluster(totalCores[1]-1) 
+registerDoParallel(cluster)
 
-for (i in 1:M) {
-  f.test = friedman.test.permute(ts.feat, alpha = 0.05, 1e3)
-  friedman.permuted[i, "original"] = f.test$original
-  friedman.permuted[i, "permuted"] = f.test$permuted
-  #p.values[i] = f.test$p.value
-  #theta = coef(f.test$model) |> as.matrix() |> as.data.frame()
-  #feature.importances = rbind(feature.importances, theta[, ncol(theta)])
-}
+fmri.p = friedman.test.permute.par(ts.feat, alpha = 0.05, p = 1e3)
 
-hist(friedman.permuted[, "permuted"])
-
-#colnames(feature.importances) = row.names(theta)
+stopCluster(cluster)
 ```
+The histogram below shows the Kolmogorov-Smirnov statistic values for the permuted fMRI response variables. The brown line is at the $1 - \alpha$ percentile of $H0(T)$, where as the green line shows the value of the original statistic before permuting the labels. As we can see, the original statistic is less than the  $1 - \alpha$ percentile, which means that we retain the null hypothesis $F_{ASD} = F_{TD}$ with significance level $\alpha$.
 
-The histogram below shows the frequency of p-values from the simulations. We can see that most p-values are **below** the threshold $\alpha = 0.05$, which means that our procedure says that the TD and ASD data come from **different** distributions most of the time. Therefore, we cannot exclude that they come from different distributions. 
+However, the learning of the model is dependent on the engineered features on the fMRI dataset. Different features may produce different results. 
 ```{r echo=FALSE}
-hist(p.values, breaks = 50,
-     main = paste("p-values for fMRI Data, M =", M),
-     xlab = "p-value",
-     col = "orchid",
-     border = "white")
-abline(v=alpha, col = 'orange', lwd=3)
-text(alpha + 0.03, 55, labels= 'α', col='orange')
+hist(fmri.p$statistics, main = "Distribution of H0(T)", col = "orchid", border = "white",
+     xlab = "Kolmogorov-Smirnov Statistic", xlim=c(0, max(fmri.p$original, quantile(fmri.p$statistics, 1 - alpha))))
+abline(v = fmri.p$original, lwd = 3, col = "#70da79")
+abline(v = quantile(fmri.p$statistics, 1 - alpha), lwd = 3, col = "#daa770")
+legend("top", legend=c("Original Statistic", "Quantile at 1 - α"), col=c("#70da79", "#daa770"), lwd = 2)
 ```
 
-## Feature Importance {#fmri-feature-importance}
-We would also like to see which of the engineered features are more important for the model. More influential features tend to have higher weights, so we choose the features with weights that are in the 95th percentile. 
-```{r feature importance}
-feature.means = lapply(feature.importances, mean) |> as.data.frame() |> t() |> as.data.frame()
-feature.means$feature_name = row.names(feature.means)
-threshold = feature.means[[1]] %>% abs() %>% quantile(0.95)
-top.10 = feature.means[feature.means[[1]] > threshold, ]
-```
-
-Jumps seem more important for identifying ASD subjects.
-```{r echo=FALSE}
-top.10 |>
-  ggplot(aes(
-    x = reorder(feature_name, abs(top.10[[1]])), 
-    y = top.10[[1]],
-    fill = ifelse(sign(top.10[[1]]) == 1, 'TD', 'ASD'))) +
-  geom_col() +
-  coord_flip() +
-  labs(
-    x = '',
-    y = 'Weight',
-    title = 'Feature importance',
-    fill  = ''
-  )
-```
-
-As lambda grows, our coefficients converge to 0.
+Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{N}_{i=1} \mathbb{I}\left(T_i \ge T \right)$, which tells us the proportion of permuted statistics that are larger than the original statistic.
 ```{r}
-plot(f.test$model, xvar='lambda')
+fmri.p$p
 ```
+
