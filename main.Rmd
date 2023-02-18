@@ -24,6 +24,8 @@ library('dplyr')
 library('transport')
 library('ggplot2')
 library('glmnet')
+library(foreach)
+library(doParallel)
 ```
 
 
@@ -172,49 +174,112 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
 }
 ```
 
+```{r include=FALSE}
+totalCores = detectCores()
+
+cluster <- makeCluster(totalCores[1]-1) 
+registerDoParallel(cluster)
+
+df = create_df(100, 150, k, H0=F)$df
+
+start = Sys.time()
+a = produce.test.statistic(df, 10000)
+Sys.time() - start
+
+#Run forloop in Parallel
+start = Sys.time()
+x <- foreach(i = 1:10000, .combine=c) %dopar% {
+  permuted.df = permute.labels(df)
+  
+  model = glm(formula=label ~ ., data=permuted.df, family=binomial)
+  y_pred = predict(model, permuted.df, type='response')
+  
+  permuted.df$y_pred = y_pred
+  
+  y_pred_class_1 = permuted.df[permuted.df$label == 1, "y_pred"]
+  y_pred_class_0 = permuted.df[permuted.df$label == 0, "y_pred"]
+  
+  result = ks.test(y_pred_class_0, y_pred_class_1)
+  result$statistic
+}
+Sys.time() - start
+```
 
 
 ```{r}
-train.test.split <- function(df, train.perc = 0.7) {
-  #' Splits a dataframe in two 
-  #' @param df the dataframe to be splitted
-  #' @param train.perc the percentage of rows that will be in the train split
+permute.labels = function(df) {
+  #' Permutes the labels of a dataframe. Assumes that the dataframe has a column named "label".
   #' 
-  #' @return a list containing **test** and **train** items, each containing a part of the original dataframe
-    sample <- sample(c(TRUE, FALSE), nrow(df), replace=TRUE, prob=c(train.perc, 1 - train.perc))
-    res = list()
-    res$train  <- df[sample, ]
-    res$test   <- df[!sample, ]
-    return(res)
+  #' @param df
+  #' @return a copy of the original dataframe with permuted labels
+  
+  labels = as.numeric(df$label)
+  n = length(labels)
+  idx = sample(1:n, n)
+  
+  permuted.labels = labels[idx]
+  permuted.df = data.frame(df)
+  permuted.df$label = permuted.labels
+
+  return(permuted.df)
 }
 
-friedman.test <- function(df, alpha = 1) {
-  #' Performs a single Friedman test on the dataframe, using ElasticNet regression
+produce.test.statistic = function(df, p) {
+  #' Produces a set of p test statistics by permuting the labels of the df dataframe p times, training
+  #' a glm classifier on each permuted set, and doing a test statistic on the output scores.
   #' 
-  #' @param df the dataframe holding the data, the column "label" is expected to hold the target variable
-  #' @param alpha same as alpha for `glmnet`
-  #' 
-  #' @return a list containing:
-  #'  - `p.value` : the p-value of the test
-  #'  - `model`   : the trained model
-    df = train.test.split(df)
+  #' @param df the dataframe to be permuted and trained on.
+  #' @param p the number of test statistics to generated.
+  #' @return a set of test statistics.
   
-    L = ncol(df$train)
-    X.test = df$test[,1:(L-1)] |> as.matrix()
-    X.train = df$train[,1:(L-1)] |> as.matrix()
-    y.train = df$train$label 
+  test.statistics = numeric(p)
+  for (i in 1:p) {
+    permuted.df = permute.labels(df)
     
-    model = cv.glmnet(X.train, y.train, alpha=alpha, family="binomial", type.measure="class")
-    y_pred = predict(model, newx=X.test, s="lambda.min")
+    model = glm(formula=label ~ ., data=permuted.df, family=binomial)
+    y_pred = predict(model, permuted.df, type='response')
+    
+    permuted.df$y_pred = y_pred
+    
+    y_pred_class_1 = permuted.df[permuted.df$label == 1, "y_pred"]
+    y_pred_class_0 = permuted.df[permuted.df$label == 0, "y_pred"]
+    
+    result = ks.test(y_pred_class_0, y_pred_class_1)
+    test.statistics[i] = result$statistic
+  }
+  return(test.statistics)
+}
 
-    # get the predicted scores for both classes
-    y_pred_class_1 = y_pred[df$test$label == 1]
-    y_pred_class_0 = y_pred[df$test$label == 0]
+
+train.predict = function(df) {
+  #' Trains a glm on the df dataframe and adds the predicted scores to it.
+  #' 
+  #' @param df a dataframe with a label column
+  #' @return the dataframe with a y_pred column including the prediciton scores.
+  model = glm(formula=label ~ ., data=df, family=binomial, maxit=1e3)
+  y_pred = predict(model, df, type='response')
+    
+  df$y_pred = y_pred
+    
+  return(df)
+}
+
+friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
+  #' Running the Friedman test with permutation
+  #' @param df the dataframe to run the Friedman test on. Must have a label column.
+  #' @param alpha the alpha value to calculate the test statistic at.
+  #' @param p the number of permutations to run
+  #' @return a list of the original statistic and the permuted statistic at quantile alpha-
+  original.predictions = train.predict(df)
+  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
+  y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
+  original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
   
-    result = list()
-    result$p.value = wilcox.test(y_pred_class_0, y_pred_class_1)$p.value
-    result$model = model
-    return(result)
+  test.statistics = produce.test.statistic(df, p)
+
+  p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
+  
+  return(p.value)
 }
 ```
 
@@ -229,6 +294,29 @@ The `simulate` function runs $M$ number of simulations to find the **p-value**, 
 1. Save the **p-value** returned by the **Wilcox** test.
 
 ```{r simulation loop}
+simulate.par = function(M, n0, n1, k, create.data, H0) {
+    #' Simulates operating characteristics of a testing procedure for two distributions.
+    #' 
+    #' @param M the number of simulations
+    #' @param n0 the number of samples to draw from the first distribution.
+    #' @param n1 the number of samples to draw from the second distribution.
+    #' @param k the number of features in each distribution.
+    #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k, H0.
+    #' @return a result vector with p-values from the testing procedure.
+    
+    results = foreach(i = 1:M, .combine=c, .packages = "random.data") %dopar% {
+        generated = create.data(n0, n1, k, H0 = H0)
+        
+        p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+        p.value
+    }
+
+    return(results)
+}
+```
+
+
+```{r simulation loop}
 simulate = function(M, n0, n1, k, create.data, H0) {
     #' Simulates operating characteristics of a testing procedure for two distributions.
     #' 
@@ -240,24 +328,29 @@ simulate = function(M, n0, n1, k, create.data, H0) {
     #' @return a result vector with p-values from the testing procedure.
     
     results = vector(length = M)
-    
 
     for (i in 1:M) {
         generated = create.data(n0, n1, k, H0 = H0)
         
-        res = friedman.test(generated$df)
+        p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
         
-        results[i] = res$p.value
+        results[i] = p.value
     }
     return(results)
 }
 ```
 
+
 ## Results {#results}
 We can observe that when the null hypothesis is false, i.e. when the data comes from two **separate** distributions, then the distribution of p-values is **highly skewed** towards $0$. In particular we can observe that the p-value is **almost always** under the $\alpha = 0.05$ threshold. This happens because the scores generated by the *Logistic Regression* classifier are distributed in a way which makes it highly likely that they come from **separate** distributions.
 
 ```{r H1 simulation, echo=FALSE, warning=FALSE}
-results.H1 = simulate(M, n0, n1, k, create_df, H0=FALSE)
+results.H1 = foreach(i = 1:M, .combine=c, .packages = "random.data") %dopar% {
+  generated = create.data(n0, n1, k, H0 = FALSE)
+  
+  p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+  p.value
+}
 h1.hist = hist(results.H1, 
      breaks = 20,
      main='Distribution of p-values when H1 is True',
@@ -268,10 +361,13 @@ text(alpha + 0.03, max(h1.hist$counts), labels = 'α', col='orange')
 
 We observe that when the null hypothesis is true, i.e. the data comes from the **same** distribution, the distribution of p-values is almost uniform. This happens because the scores generated by the *Logistic Regression* model are very similar for both classes, which means that the model cannot easily distinguish between them and in turn causes p-values to be uniformly distributed when the scores are given to the **Wilcox** test.
 
-
-
 ```{r H0 simulation, echo=FALSE, warning=FALSE}
-results.H0 = simulate(M, n0, n1, k, create_df, H0=TRUE)
+results.H0 = foreach(i = 1:M, .combine=c, .packages = "random.data") %dopar% {
+  generated = create.data(n0, n1, k, H0 = TRUE)
+  
+  p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+  p.value
+}
 h0.hist = hist(results.H0, 
      breaks = 20,
      main='Distribution of p-values when H0 is True',
@@ -304,12 +400,24 @@ for (i in 1:nrow(params.df)) {
   n0 = as.integer(row$N * row$prop)
   n1 = as.integer(row$N - n0)
   
+  size = foreach(i = 1:M, .combine=c, .packages = "random.data") %dopar% {
+    generated = create.data(n0, n1, row$k, H0 = TRUE)
+    
+    p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+    p.value
+  }
+  power = foreach(i = 1:M, .combine=c, .packages = "random.data") %dopar% {
+    generated = create.data(n0, n1, row$k, H0 = FALSE)
+    
+    p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+    p.value
+  }
   performance = rbind(
     data.frame(
       N    = rep.int(row$N, M),
       k    = rep.int(row$k, M),
-      size = simulate(M, n0, n1, row$k, create_df, H0=TRUE),
-      power= simulate(M, n0, n1, row$k, create_df, H0=FALSE)
+      size = size,
+      power= power
     ),
     performance
   )
@@ -407,11 +515,7 @@ We chose to extract the following features from the fMRI data for each brain reg
 
 - *mean* over time.
 - *median* over time.
-- *max* over time.
-- *min* over time.
 - *standard deviation* over time.
-- *95th percentile* over time.
-- *5th percentile* over time.
 - *jump of standard deviations* over time.
 - *jumps of means* over time.
 - *jumps of medians* over time.
@@ -422,11 +526,7 @@ ts.feature.engine = function(data, label=1) data %>%
   extract_feat_ts(
     mean   = mean,
     median = median,
-    max    = max,
-    min    = min,
     sd     = sd,
-    perc.95= . %>% quantile(.95),
-    perc.05= . %>% quantile(.05),
     jump.sd    = . %>% jump(sd),
     jump.avg   = . %>% jump(mean),
     jump.median= . %>% jump(median)
@@ -444,19 +544,29 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
 
 ## Simulation {#fmri-simulation}
 We run the Friedman test on the engineered fMRI data for $M = 100$ times to get a range of p-values. The two stochastic sources in the simulation are the **train-test** split of the data as well as the regularisation parameter $\lambda$ used by the `glmnet` package.
+
+If the original calculated value is **greater** than the $1 - \alpha$ quantile, then the H0 can be rejected.
 ```{r fmri simulation, warning=FALSE}
 M = 1e2
 feature.importances = data.frame()
 p.values = numeric(M)
 
+friedman.permuted = matrix(NA, nrow = M, ncol = 2)
+colnames(friedman.permuted) = c("original", "permuted")
+#friedman.test.permute(ts.feat, alpha = 0.05, 1000)
+
 for (i in 1:M) {
-  f.test = friedman.test(ts.feat)
-  p.values[i] = f.test$p.value
-  theta = coef(f.test$model) |> as.matrix() |> as.data.frame()
-  feature.importances = rbind(feature.importances, theta[, ncol(theta)])
+  f.test = friedman.test.permute(ts.feat, alpha = 0.05, 1e3)
+  friedman.permuted[i, "original"] = f.test$original
+  friedman.permuted[i, "permuted"] = f.test$permuted
+  #p.values[i] = f.test$p.value
+  #theta = coef(f.test$model) |> as.matrix() |> as.data.frame()
+  #feature.importances = rbind(feature.importances, theta[, ncol(theta)])
 }
 
-colnames(feature.importances) = row.names(theta)
+hist(friedman.permuted[, "permuted"])
+
+#colnames(feature.importances) = row.names(theta)
 ```
 
 The histogram below shows the frequency of p-values from the simulations. We can see that most p-values are **below** the threshold $\alpha = 0.05$, which means that our procedure says that the TD and ASD data come from **different** distributions most of the time. Therefore, we cannot exclude that they come from different distributions. 
