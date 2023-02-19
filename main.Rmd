@@ -349,7 +349,7 @@ totalCores = detectCores()
 cluster <- makeCluster(totalCores[1]-1) 
 registerDoParallel(cluster)
 
-results.H1 = simulate(100, n0, n1, k, create_df, H0 = FALSE)
+results.H1 = simulate(M, n0, n1, k, create_df, H0 = FALSE)
 
 stopCluster(cluster)
 
@@ -388,7 +388,7 @@ Now we're going to try the same test but with different parameters:
 - the number of samples in total: $N \in \{250, 1000, 2000\}$
 
 
-```{r experiment new params simulation, warning=FALSE}
+```{r experiment new params simulation, warning=FALSE, eval=FALSE}
 k.values = seq(3, 7)
 N.values = c(250, 1000, 2000)
 prop.values = c(0.5)
@@ -425,20 +425,19 @@ for (i in 1:nrow(params.df)) {
     performance
   )
 }
-
-write.csv(performance,'performance.csv')
 ```
 
 
 
 ```{r prepare values for plotting, include=FALSE}
+performance = read.csv('performance.csv')
 k.values = sort(unique(performance$k))
 N.values = sort(unique(performance$N))
 prop.values = sort(unique(performance$prop))
 params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
 ```
 
-The plot below shows the **size** of the test, i.e. the probability of observing a **Type 1 Error** (false positive) as a function of the **number of features** $k$, and the **number of samples**. Each circle is the **average p-value** of $M$ simulations. We see that the probability of a false discovery, i.e. thinking that the data does **NOT** come from two **separate distributions** when it actually does is within a range of $0.035$ and $0.07$. The probabilities are mostly the same, irregardless of the of the number of features, number of samples, and class imbalances.
+The plot below shows the **size** of the test, i.e. the probability of observing a **Type 1 Error** (false positive) as a function of the **number of features** $k$, and the **number of samples**. Each circle is the **average p-value** of $M$ simulations. We see that the probability of a false discovery, i.e. thinking that the data does **NOT** come from two **separate distributions** when it actually does, are mostly the same, irregardless of the of the number of features, number of samples.
 ```{r echo=FALSE}
 performance.summary = performance |>
   group_by(k, N) |>
@@ -459,7 +458,7 @@ performance.summary |>
   labs(fill = 'Number of samples', col = 'Class balance')
 ```
 
-The plot below shows the **power** of the test, i.e. observing a **true positive** (complement of false negative) as a function of the **number of features** $k$, and the **number of samples**. Again, each circle is the **average p-value** of $M$ simulations. Here we can see that the probability of correctly rejecting the null hypothesis when it is false increases with the number of features and somewhat with the number of samples. For $k=3$, the probability of a **true discovery** ranges from $0.75$ to $0.85$, however for $k=7$ it is between $0.95$ and $1.0$, indicating a positive relationship between the two variables. This could be explained by the fact that as the number of dimensions increase, the amount of useful information encoded in them which helps the Logistic Regression model separate the classes also increases. Additionally, we also observe that **p-values** for smaller samples as indicated by **darker** circles cluster more towards the lower end of the probability interval for a specific value of $k$. E.g. for $k=6$, darker circles are more concentrated towards the bottom.
+The plot below shows the **power** of the test, i.e. observing a **true positive** (complement of false negative) as a function of the **number of features** $k$, and the **number of samples**. Again, each circle is the **average p-value** of $M$ simulations. Here we can see that the probability of correctly rejecting the null hypothesis when it is false increases with the number of features and somewhat with the number of samples. For $k=3$, the probability of **true discovery** is lower than for $k=7$, indicating a positive relationship between the two variables. Additionally as the number of features grows the number of samples becomes less important in determining the probability of **true positive** as the density of the circles shows. This could be explained by the fact that as the number of dimensions increase, the amount of useful information encoded in them which helps the Logistic Regression model separate the classes also increases.
 
 ```{r echo=FALSE}
 performance.summary |>
@@ -572,7 +571,8 @@ abline(v = quantile(fmri.p$statistics, 1 - alpha), lwd = 3, col = "#daa770")
 legend("top", legend=c("Original Statistic", "Quantile at 1 - α"), col=c("#70da79", "#daa770"), lwd = 2)
 ```
 
-Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{N}_{i=1} \mathbb{I}\left(T_i \ge T \right)$, which tells us the proportion of permuted statistics that are larger than the original statistic.
+Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{N}_{i=1} \mathbb{I}\left(T_i \ge T \right)$, which tells us the proportion of permuted statistics that are larger than the original statistic. 
+Assuming $\alpha = 0.05$ there are enough evidences for rejecting the null hypothesis; however if we choose a greater $\alpha$ we also increase the risk of Type I error probability and we may wrongly reject $H_{0}$ increasing the power of the statistical test. Considering the p-value below, with an $\alpha = 0.15$ we could reject $H_{0}$.
 ```{r echo=FALSE}
 fmri.p$p
 ```
