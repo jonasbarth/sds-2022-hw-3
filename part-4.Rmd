@@ -315,28 +315,6 @@ The `simulate` function runs $M$ number of simulations to find the **p-value**, 
 1. Feed the predicted scores for class 0 and class 1 samples to the **Wilcox** test.
 1. Save the **p-value** returned by the **Wilcox** test.
 
-```{r simulation loop}
-simulate.par = function(M, n0, n1, k, create.data, H0) {
-    #' Simulates operating characteristics of a testing procedure for two distributions.
-    #' 
-    #' @param M the number of simulations
-    #' @param n0 the number of samples to draw from the first distribution.
-    #' @param n1 the number of samples to draw from the second distribution.
-    #' @param k the number of features in each distribution.
-    #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k, H0.
-    #' @return a result vector with p-values from the testing procedure.
-    
-    results = foreach(i = 1:M, .combine=c, .packages = "e1071", .export = c("random.data", "random.distro", "friedman.test.permute", "train.predict", "produce.test.statistic", "permute.labels")) %dopar% {
-        generated = create.data(n0, n1, k, H0 = H0)
-        
-        p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
-        p.value
-    }
-
-    return(results)
-}
-```
-
 
 ```{r simulation loop}
 simulate = function(M, n0, n1, k, create.data, H0) {
