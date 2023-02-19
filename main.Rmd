@@ -177,7 +177,7 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
 produce.test.statistics.par = function(df, p, model = "lg") {
   test.statistics <- foreach(i = 1:p, .combine=c, .packages="e1071", .export="permute.labels") %dopar% {
     permuted.df = permute.labels(df)
-    
+    print(length(permuted.df))
     if (model == "lg") {
       m = glm(formula=label ~ ., data=permuted.df, family=binomial, maxit=1e3)
       y_pred = predict(m, permuted.df, type='response')
@@ -270,17 +270,17 @@ friedman.test.permute.par = function(df, alpha = 0.05, p = 1e2, model = "lg") {
   #' @param p the number of permutations to run
   #' @return a list of the original statistic and the permuted statistic at quantile alpha-
   original.predictions = train.predict(df, model)
-  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
+
+    y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
   y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
   original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
   
   test.statistics = produce.test.statistics.par(df, p, model)
-  y.pred = test.statistics$pred
   test.statistics = test.statistics$statistics
   
   p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
   
-  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=y.pred))
+  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=original.predictions$y_pred))
 }
 
 friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
@@ -296,6 +296,7 @@ friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
   
   test.statistics = produce.test.statistic(df, p)
   y.pred = test.statistics$pred
+  print(length(y.pred))
   test.statistics = test.statistics$statistics
   
   p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
@@ -313,29 +314,6 @@ The `simulate` function runs $M$ number of simulations to find the **p-value**, 
 1. Get the predicted scores of the model on the **test set**.
 1. Feed the predicted scores for class 0 and class 1 samples to the **Wilcox** test.
 1. Save the **p-value** returned by the **Wilcox** test.
-
-```{r simulation loop}
-simulate.par = function(M, n0, n1, k, create.data, H0) {
-    #' Simulates operating characteristics of a testing procedure for two distributions.
-    #' 
-    #' @param M the number of simulations
-    #' @param n0 the number of samples to draw from the first distribution.
-    #' @param n1 the number of samples to draw from the second distribution.
-    #' @param k the number of features in each distribution.
-    #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k, H0.
-    #' @return a result vector with p-values from the testing procedure.
-    
-    results = foreach(i = 1:M, .combine=c, .packages = "e1071", .export = c("random.data", "random.distro", "friedman.test.permute", "train.predict", "produce.test.statistic", "permute.labels")) %dopar% {
-        generated = create.data(n0, n1, k, H0 = H0)
-        
-        p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
-        p.value
-    }
-
-    return(results)
-}
-```
-
 
 ```{r simulation loop}
 simulate = function(M, n0, n1, k, create.data, H0) {
@@ -391,7 +369,7 @@ totalCores = detectCores()
 cluster <- makeCluster(totalCores[1]-1) 
 registerDoParallel(cluster)
 
-results.H0 = simulate(100, n0, n1, k, create_df, H0 = TRUE)
+results.H0 = simulate(M, n0, n1, k, create_df, H0 = TRUE)
 
 stopCluster(cluster)
 h0.hist = hist(results.H0, 
@@ -578,7 +556,7 @@ totalCores = detectCores()
 cluster <- makeCluster(totalCores[1]-1) 
 registerDoParallel(cluster)
 
-fmri.p = friedman.test.permute.par(ts.feat, alpha = 0.05, p = 1e2, model = "svm")
+fmri.p = friedman.test.permute.par(ts.feat, alpha = 0.05, p = 1e3, model = "svm")
 
 stopCluster(cluster)
 ```
@@ -596,5 +574,8 @@ legend("top", legend=c("Original Statistic", "Quantile at 1 - α"), col=c("#70da
 Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{N}_{i=1} \mathbb{I}\left(T_i \ge T \right)$, which tells us the proportion of permuted statistics that are larger than the original statistic.
 ```{r}
 fmri.p$p
+```
+```{r}
+ts.feat$y_pred = fmri.p$pred
 ```
 

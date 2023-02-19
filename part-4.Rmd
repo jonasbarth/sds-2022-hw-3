@@ -270,17 +270,17 @@ friedman.test.permute.par = function(df, alpha = 0.05, p = 1e2, model = "lg") {
   #' @param p the number of permutations to run
   #' @return a list of the original statistic and the permuted statistic at quantile alpha-
   original.predictions = train.predict(df, model)
-  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
+
+    y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
   y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
   original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
   
   test.statistics = produce.test.statistics.par(df, p, model)
-  y.pred = test.statistics$pred
   test.statistics = test.statistics$statistics
   
   p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
   
-  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=y.pred))
+  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=original.predictions$y_pred))
 }
 
 friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
@@ -296,6 +296,7 @@ friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
   
   test.statistics = produce.test.statistic(df, p)
   y.pred = test.statistics$pred
+  print(length(y.pred))
   test.statistics = test.statistics$statistics
   
   p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
@@ -598,3 +599,6 @@ Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{
 fmri.p$p
 ```
 
+```{r}
+ts.feat$y_pred = fmri.p$pred
+```
