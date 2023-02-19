@@ -1,0 +1,600 @@
+---
+title: "main"
+author: "Jonas Barth, Mattia Castaldo, Matteo Migliarini"
+date: "2023-02-03"
+output: html_document
+---
+
+# Index
+- [Simulation Study](#simulation-study)
+    - [Setup](#parameter-setup)
+    - [Creating Data](#creating-data)
+    - [Simulation Loop](#simulation-loop)
+    - [Different Parameters](#different-parameters)
+- [Friedman fMRI Data](#fmri-data)
+    - [Feature Engineering](#feature-engineering)
+    - [Simulation](#fmri-friedman-test)
+
+# Setup
+```{r setup, include=FALSE}
+load("hw3_data.RData")
+library('dplyr')
+library('transport')
+library('ggplot2')
+library('glmnet')
+library(foreach)
+library(doParallel)
+library(e1071)
+```
+
+
+# Simulation Study {#simulation-study}
+Repeat $M$ times:
+
+1. pick two k-variate distributions to sample from. Each distribution represents one class.
+1. sample $n_0$ and $n_1$ number of samples from the respective distributions.
+1. train a binary classifier
+1. do permutation test (slide 8)
+Experiment with different:
+
+distributions
+sample sizes
+Finally, summarise results.
+
+## Setting up parameters {#parameter-setup}
+We set up the following parameters for the **simulation study**.
+
+- the simulation size $M$.
+- the number of dimensions $k$ for each distribution.
+- the number of samples from each distribution, $n0$ and $n1$ respectively.
+- the confidence level $\alpha$.
+```{r hyperparameters}
+M = 1e3
+P = 10
+
+k = 5
+n0 = 100
+n1 = 150
+
+alpha = 0.05
+```
+
+## Creating Data {#creating-data}
+In this section, we have functions for creating random distributions that will be used in the simulation study. The `random.distro` function let's us draw **univariate** data from a randomly chosen distribution with a determined *mean* and *standard deviation*. To generate a **k-variate** distribution, we call `random.distro` multiple times in the `random.data` function.
+```{r}
+random.distro <- function(n, mean = 1, sd = 1, noisiness = sd * 0.5, eps = 1e-5) {
+  #' Generates a univariate random noisy distribution with n samples.
+  #' 
+  #' @param n the number of samples to be generated
+  #' @param mean the mean of the population to draw samples from
+  #' @param sd the standard deviation of the population to draw samples from
+  #' @param noisiness the standard deviation of the gaussian noise to be added
+  #' @param eps 
+  #' 
+  #' @return a vector of data sampled from a randomly chosen distribution with the provided mean and standard deviation, and with added noise.
+  rd <- sample(1:5, 1)[[1]]
+
+  if (rd==1) {
+    rate = 1 / sd
+    X = rexp(n,rate) + (mean - rate)
+  } else if (rd ==2) {
+    X = rnorm(n, mean, sd)
+  } else if (rd == 3) {
+    shape = (mean/sd)^2
+    scale = sd / sqrt(shape)
+    X = rgamma(n, shape, scale = scale)
+  } else if (rd == 4) {
+    sd = max(sqrt(2) + eps, sd)
+    df = 2 * sd^2 / (sd^2 - 1)
+    X = rt(n, df) + mean
+  } else {
+    b = mean + sd / sqrt(2)
+    a = mean - sd / sqrt(2)
+    X =  runif(n, a, b)
+  }
+  
+  noise = rnorm(n, 0, noisiness)
+  return(X + noise)
+}
+
+random.data <- function(n, k, means = rnorm(k, 0, 3), sds = rnorm(k, 3, 1)) {
+  #' Generates a single k-variate random distribution with n samples.
+  #' 
+  #' @param n the number of samples to generate
+  #' @param k the number of dimensions the generated data will have
+  #' @param means a vector of k mean values, one per dimension
+  #' @param sds a vector of standard deviations, one per dimension
+  #' 
+  #' @return a dataframe of random data with n rows and k columns.
+  cols = list()
+  for (i in 1:k) {
+    mean = means[i]
+    sd = max(1, sds[i])
+    cols[[paste(i)]] = random.distro(n, mean, sd)
+  }
+  return(data.frame(cols))
+}
+```
+
+
+The `create_df` function builds upon the previous functions data generating functions. It generates a dataframe with data drawn from either two separate distributions, or the same distribution. This function is used in the simulation loop and the data returned from it is used to train the **classifier**. 
+```{r}
+create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
+    #' Creates a dataframe with samples from the two distributions.
+    #' 
+    #' @param n0 number of samples from dist0
+    #' @param n1 number of samples from dist1
+    #' @param k  number of features
+    #' @param H0 if TRUE, all samples will come from the same distribution, if FALSE samples will come from two separate distributions.
+    #' @param shuffle if TRUE the data will be randomly shuffled, if FALSE data for the two classes will be grouped in the dataframe.
+    #' @param distance if TRUE, the Wasserstein distance between the distributions will be added to the list.
+    #' 
+    #' @return a list with a dataframe with n0 samples from dist0, n1 samples from dist1, and a label column, a train-test split of the data, the means and standard deviations of each of the features.
+    
+    means = rnorm(k, 0, 10)
+    sds   = rnorm(k, 3, 1)
+    if (H0) {
+      X  = random.data(n0+n1, k, means, sds)
+      X0 = X[1:n0, ]
+      X1 = X[(n0+1):(n0+n1), ]
+    } else {
+      X0 = random.data(n0, k, means, sds)
+      X1 = random.data(n1, k, means, sds)
+    }
+    
+    y0 = rep(0, n0)
+    y1 = rep(1, n1)
+    y = rep(c(0, 1), c(n0, n1))
+    dim(y) = c(n0 + n1, 1)
+    
+    n.min = min(n0, n1)
+    X0.sample = X0[sample(nrow(X0), n.min), ]
+    X1.sample = X1[sample(nrow(X1), n.min), ]
+
+    X = rbind(X0, X1)
+    df = data.frame(X)
+    df$label = y
+    
+    if (shuffle)
+      df = df[sample(nrow(df), nrow(df)), ]
+    
+    generated = list()
+    generated$df = df
+    generated$means = means
+    generated$sds = sds
+    generated$same.src = H0
+    generated$X = X
+    generated$y = y
+    
+    if (distance)
+      generated$distance = wasserstein(pp(X0.sample), pp(X1.sample))
+    
+    return(generated)
+}
+```
+
+```{r include=FALSE}
+produce.test.statistics.par = function(df, p, model = "lg") {
+  test.statistics <- foreach(i = 1:p, .combine=c, .packages="e1071", .export="permute.labels") %dopar% {
+    permuted.df = permute.labels(df)
+    
+    if (model == "lg") {
+      m = glm(formula=label ~ ., data=permuted.df, family=binomial, maxit=1e3)
+      y_pred = predict(m, permuted.df, type='response')
+    } else if (model == "svm") {
+      m = svm(label ~ ., data=permuted.df, kernel="sigmoid", shrinking=FALSE, probability=TRUE)
+      y_pred = predict(m, permuted.df)
+    }
+    
+    permuted.df$y_pred = y_pred
+    
+    y_pred_class_1 = permuted.df[permuted.df$label == 1, "y_pred"]
+    y_pred_class_0 = permuted.df[permuted.df$label == 0, "y_pred"]
+    
+    result = ks.test(y_pred_class_0, y_pred_class_1)
+    result$statistic
+  }
+  return(list(statistics=test.statistics, pred=y_pred))
+}
+```
+
+
+```{r}
+permute.labels = function(df) {
+  #' Permutes the labels of a dataframe. Assumes that the dataframe has a column named "label".
+  #' 
+  #' @param df
+  #' @return a copy of the original dataframe with permuted labels
+  
+  labels = as.numeric(df$label)
+  n = length(labels)
+  idx = sample(1:n, n)
+  
+  permuted.labels = labels[idx]
+  permuted.df = data.frame(df)
+  permuted.df$label = permuted.labels
+
+  return(permuted.df)
+}
+
+produce.test.statistic = function(df, p) {
+  #' Produces a set of p test statistics by permuting the labels of the df dataframe p times, training
+  #' a glm classifier on each permuted set, and doing a test statistic on the output scores.
+  #' 
+  #' @param df the dataframe to be permuted and trained on.
+  #' @param p the number of test statistics to generated.
+  #' @return a set of test statistics.
+  
+  test.statistics = numeric(p)
+  for (i in 1:p) {
+    permuted.df = permute.labels(df)
+    
+    model = glm(formula=label ~ ., data=permuted.df, family=binomial)
+    y_pred = predict(model, permuted.df, type='response')
+    
+    permuted.df$y_pred = y_pred
+    
+    y_pred_class_1 = permuted.df[permuted.df$label == 1, "y_pred"]
+    y_pred_class_0 = permuted.df[permuted.df$label == 0, "y_pred"]
+    
+    result = ks.test(y_pred_class_0, y_pred_class_1)
+    test.statistics[i] = result$statistic
+  }
+  return(list(statistics=test.statistics, pred=y_pred))
+}
+
+
+train.predict = function(df, model = "lg") {
+  #' Trains a glm on the df dataframe and adds the predicted scores to it.
+  #' 
+  #' @param df a dataframe with a label column
+  #' @return the dataframe with a y_pred column including the prediciton scores.
+  
+  if (model == "lg") {
+      m = glm(formula=label ~ ., data=df, family=binomial, maxit=1e3)
+      y_pred = predict(m, df, type='response')
+    } else if (model == "svm") {
+      m = svm(label ~ ., data=df, kernel="sigmoid", shrinking=FALSE, probability=TRUE)
+      y_pred = predict(m, df)
+  }
+    
+  df$y_pred = y_pred
+    
+  return(df)
+}
+
+friedman.test.permute.par = function(df, alpha = 0.05, p = 1e2, model = "lg") {
+  #' Running the Friedman test with permutation
+  #' @param df the dataframe to run the Friedman test on. Must have a label column.
+  #' @param alpha the alpha value to calculate the test statistic at.
+  #' @param p the number of permutations to run
+  #' @return a list of the original statistic and the permuted statistic at quantile alpha-
+  original.predictions = train.predict(df, model)
+  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
+  y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
+  original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
+  
+  test.statistics = produce.test.statistics.par(df, p, model)
+  y.pred = test.statistics$pred
+  test.statistics = test.statistics$statistics
+  
+  p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
+  
+  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=y.pred))
+}
+
+friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
+  #' Running the Friedman test with permutation
+  #' @param df the dataframe to run the Friedman test on. Must have a label column.
+  #' @param alpha the alpha value to calculate the test statistic at.
+  #' @param p the number of permutations to run
+  #' @return a list of the original statistic and the permuted statistic at quantile alpha-
+  original.predictions = train.predict(df)
+  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
+  y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
+  original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
+  
+  test.statistics = produce.test.statistic(df, p)
+  y.pred = test.statistics$pred
+  test.statistics = test.statistics$statistics
+  
+  p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
+  
+  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=y.pred))
+}
+```
+
+## Simulation Loop {#simulation-loop}
+The `simulate` function runs $M$ number of simulations to find the **p-value**, **size** and **power** of the **Wilcox** two sample test. In each simulation, we:
+
+1. Create a **k-variate** dataset.
+1. Split the dataset into **train** and **test** sets.
+1. Train a **Logistic Regression** model on the **train set**.
+1. Get the predicted scores of the model on the **test set**.
+1. Feed the predicted scores for class 0 and class 1 samples to the **Wilcox** test.
+1. Save the **p-value** returned by the **Wilcox** test.
+
+```{r simulation loop}
+simulate.par = function(M, n0, n1, k, create.data, H0) {
+    #' Simulates operating characteristics of a testing procedure for two distributions.
+    #' 
+    #' @param M the number of simulations
+    #' @param n0 the number of samples to draw from the first distribution.
+    #' @param n1 the number of samples to draw from the second distribution.
+    #' @param k the number of features in each distribution.
+    #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k, H0.
+    #' @return a result vector with p-values from the testing procedure.
+    
+    results = foreach(i = 1:M, .combine=c, .packages = "e1071", .export = c("random.data", "random.distro", "friedman.test.permute", "train.predict", "produce.test.statistic", "permute.labels")) %dopar% {
+        generated = create.data(n0, n1, k, H0 = H0)
+        
+        p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+        p.value
+    }
+
+    return(results)
+}
+```
+
+
+```{r simulation loop}
+simulate = function(M, n0, n1, k, create.data, H0) {
+    #' Simulates operating characteristics of a testing procedure for two distributions.
+    #' 
+    #' @param M the number of simulations
+    #' @param n0 the number of samples to draw from the first distribution.
+    #' @param n1 the number of samples to draw from the second distribution.
+    #' @param k the number of features in each distribution.
+    #' @param create.data a function for creating a dataframe containing n0 + n1 samples, from the two distributions. The function should take the parameters n0, n1, k, H0.
+    #' @return a result vector with p-values from the testing procedure.
+    
+    results = vector(length = M)
+
+    for (i in 1:M) {
+        generated = create.data(n0, n1, k, H0 = H0)
+        
+        p.value = friedman.test.permute.par(generated$df, alpha = alpha, p = n0 + n1)$p
+        
+        results[i] = p.value
+    }
+    return(results)
+}
+```
+
+
+## Results {#results}
+We can observe that when the null hypothesis is false, i.e. when the data comes from two **separate** distributions, then the distribution of p-values is **highly skewed** towards $0$. In particular we can observe that the p-value is **almost always** under the $\alpha = 0.05$ threshold. This happens because the scores generated by the *Logistic Regression* classifier are distributed in a way which makes it highly likely that they come from **separate** distributions.
+
+```{r H1 simulation, include=FALSE, warning=FALSE, eval=FALSE}
+totalCores = detectCores()
+
+cluster <- makeCluster(totalCores[1]-1) 
+registerDoParallel(cluster)
+
+results.H1 = simulate(100, n0, n1, k, create_df, H0 = FALSE)
+
+stopCluster(cluster)
+
+h1.hist = hist(results.H1, 
+     breaks = 20,
+     main='Distribution of p-values when H1 is True',
+     xlab='p-value')
+abline(v=alpha, col = 'orange', lwd=3)
+text(alpha + 0.03, max(h1.hist$counts), labels = 'α', col='orange')
+```
+
+We observe that when the null hypothesis is true, i.e. the data comes from the **same** distribution, the distribution of p-values is almost uniform. This happens because the scores generated by the *Logistic Regression* model are very similar for both classes, which means that the model cannot easily distinguish between them and in turn causes p-values to be uniformly distributed when the scores are given to the **Kolmogorov-Smirnov** test.
+
+```{r H0 simulation, include=FALSE, warning=FALSE, eval=FALSE}
+totalCores = detectCores()
+
+cluster <- makeCluster(totalCores[1]-1) 
+registerDoParallel(cluster)
+
+results.H0 = simulate(M, n0, n1, k, create_df, H0 = TRUE)
+
+stopCluster(cluster)
+h0.hist = hist(results.H0, 
+     breaks = 20,
+     main='Distribution of p-values when H0 is True',
+     xlab='p-value')
+abline(v=alpha, col = 'orange', lwd=3)
+text(alpha + 0.03, max(h0.hist$counts), labels= 'α', col='orange')
+```
+
+## Experiment with different parameters {#different-parameters}
+
+Now we're going to try the same test but with different parameters:
+
+- the number of features per sample: $k \in \{3, 4, 5, 6, 7\}$
+- the number of samples in total: $N \in \{250, 1000, 2000\}$
+
+
+```{r experiment new params simulation, include=FALSE, warning=FALSE, eval=FALSE}
+k.values = seq(3, 7)
+N.values = c(250, 1000, 2000)
+prop.values = c(0.5)
+
+total_params = length(k.values) * length(N.values) * length(prop.values)
+params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
+
+performance = data.frame()
+
+for (i in 1:nrow(params.df)) {
+  row = params.df[i, ]
+  n0 = as.integer(row$N * row$prop)
+  n1 = as.integer(row$N - n0)
+  
+  size = foreach(i = 1:M, .combine=c) %dopar% {
+    generated = create_df(n0, n1, row$k, H0 = TRUE)
+    
+    p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+    p.value
+  }
+  power = foreach(i = 1:M, .combine=c) %dopar% {
+    generated = create_df(n0, n1, row$k, H0 = FALSE)
+    
+    p.value = friedman.test.permute(generated$df, alpha = alpha, p = n0 + n1)
+    p.value
+  }
+  performance = rbind(
+    data.frame(
+      N    = rep.int(row$N, M),
+      k    = rep.int(row$k, M),
+      size = size,
+      power= power
+    ),
+    performance
+  )
+}
+
+write.csv(performance,'performance.csv')
+```
+
+
+
+```{r prepare values for plotting, include=FALSE, eval=FALSE}
+k.values = sort(unique(performance$k))
+N.values = sort(unique(performance$N))
+prop.values = sort(unique(performance$prop))
+params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
+```
+
+The plot below shows the **size** of the test, i.e. the probability of observing a **Type 1 Error** (false positive) as a function of the **number of features** $k$, and the **number of samples**. Each circle is the **average p-value** of $M$ simulations. We see that the probability of a false discovery, i.e. thinking that the data does **NOT** come from two **separate distributions** when it actually does is within a range of $0.035$ and $0.07$. The probabilities are mostly the same, irregardless of the of the number of features, number of samples, and class imbalances.
+```{r echo=FALSE, include=FALSE, eval=FALSE}
+performance.summary = performance |>
+  group_by(k, N) |>
+  dplyr::summarise(
+    type.one = sum(size < alpha) / length(size),
+    type.two = 1 - sum(power > alpha) / length(power), 
+    .groups = 'keep'
+  )
+
+performance.summary |>
+  ggplot(
+    aes(x=k, y = type.one)
+  ) +
+  geom_dotplot(aes(group=k+N, fill=N), binaxis='y', stackdir='center', dotsize=.2, binwidth = 0.005) +
+  ggtitle('Distribution of Type I error probability') +
+  xlab('Number of features [k]') +
+  ylab('P(Type I error)') + 
+  labs(fill = 'Number of samples', col = 'Class balance')
+```
+
+The plot below shows the **power** of the test, i.e. observing a **true positive** (complement of false negative) as a function of the **number of features** $k$, and the **number of samples**. Again, each circle is the **average p-value** of $M$ simulations. Here we can see that the probability of correctly rejecting the null hypothesis when it is false increases with the number of features and somewhat with the number of samples. For $k=3$, the probability of a **true discovery** ranges from $0.75$ to $0.85$, however for $k=7$ it is between $0.95$ and $1.0$, indicating a positive relationship between the two variables. This could be explained by the fact that as the number of dimensions increase, the amount of useful information encoded in them which helps the Logistic Regression model separate the classes also increases. Additionally, we also observe that **p-values** for smaller samples as indicated by **darker** circles cluster more towards the lower end of the probability interval for a specific value of $k$. E.g. for $k=6$, darker circles are more concentrated towards the bottom.
+
+```{r echo=FALSE, eval=FALSE}
+performance.summary |>
+  ggplot(
+    aes(x=k, y = type.two)
+  ) +
+  geom_dotplot(aes(group=k+N, fill=N), binaxis='y', stackdir='center', dotsize=.5, binwidth = 0.01) +
+  ggtitle('Distribution of Type II error probability') +
+  xlab('Number of features [k]') +
+  ylab('1 - P(Type II error)') + 
+  labs(fill = 'Number of samples', col = 'Class balance')
+```
+
+
+
+# 4. Friedman fMRI Data {#fmri-data}
+
+## Feature Engineering {#feature-engineering}
+Below are functions for helping us to engineer some features for the **fMRI** dataset. We chose to engineer features across the **time dimension**, such that each brain region is still distinguishable from the others.
+```{r fmri data engineering functions}
+#' Applies a certain function to all the time-series columns in a df
+apply_per_time <- function(data, func) 
+  data |>
+    lapply(function(patient) sapply(patient, func)) |> 
+    data.frame() |>
+    t() |>
+    data.frame() 
+
+extract_feat_ts <- function(data, ...)  {
+  #' Applies summaries to the data. 
+  #' @param data a list holding N k-variate time series
+  #' @param ...  a number of M functions that take in input an univariate time-series and give in in output a single value
+  #' 
+  #' @return a dataframe of with $N$ rows and $M*k$ columns, one for each function applied to a single time-series
+  func.list = list(...)
+  
+  func.list |>
+    lapply(function(func) apply_per_time(data, func)) %>%
+    do.call(cbind.data.frame, . )
+  }
+
+```
+
+The `jump` function applies a function to the **difference** between brain regions.
+```{r jump function}
+jump <- function(x, func=mean) {
+  #' Applies a function to the difference of each element with the next one 
+  #' @param x an array of data
+  #' @param func the function that should be applied
+  L = length(x)
+  
+  func(x[2:L] - x[1:(L-1)])
+}
+```
+
+We chose to extract the following features from the fMRI data for each brain region:
+
+- *mean* over time.
+- *median* over time.
+- *standard deviation* over time.
+- *jump of standard deviations* over time.
+- *jumps of means* over time.
+- *jumps of medians* over time.
+
+```{r feature engineering}
+#' Extracts a certain number of feature from the ASD or TD dataset
+ts.feature.engine = function(data, label=1) data %>%
+  extract_feat_ts(
+    mean   = mean,
+    median = median,
+    sd     = sd,
+    jump.sd    = . %>% jump(sd),
+    jump.avg   = . %>% jump(mean),
+    jump.median= . %>% jump(median)
+  ) |>
+  cbind(label=label)
+
+asd.ts.feat = ts.feature.engine(asd_data, label=1)
+td.ts.feat  = ts.feature.engine(td_data,  label=0)
+ts.feat = rbind(asd.ts.feat, td.ts.feat)
+ts.feat = ts.feat[-ncol(ts.feat)] %>%
+  scale() %>%
+  as.data.frame() %>%
+  cbind(ts.feat[ncol(ts.feat)])
+```
+
+## fMRI Friedman Test {#fmri-friedman-test}
+We run the Friedman test on the engineered fMRI data with $p = 1000$ permutations. We are using the Support Vector Machine (SVM) classifier to help combat overfitting.
+
+If the original calculated value is **greater** than the $1 - \alpha$ quantile, then the H0 can be rejected.
+```{r fmri simulation, warning=FALSE}
+totalCores = detectCores()
+
+cluster <- makeCluster(totalCores[1]-1) 
+registerDoParallel(cluster)
+
+fmri.p = friedman.test.permute.par(ts.feat, alpha = 0.05, p = 1e2, model = "svm")
+
+stopCluster(cluster)
+```
+The histogram below shows the Kolmogorov-Smirnov statistic values for the permuted fMRI response variables. The brown line is at the $1 - \alpha$ percentile of $H0(T)$, where as the green line shows the value of the original statistic before permuting the labels. As we can see, the original statistic is less than the  $1 - \alpha$ percentile, which means that we retain the null hypothesis $F_{ASD} = F_{TD}$ with significance level $\alpha$.
+
+However, the learning of the model is dependent on the engineered features on the fMRI dataset. Different features may produce different results. 
+```{r echo=FALSE}
+hist(fmri.p$statistics, main = "Distribution of H0(T)", col = "orchid", border = "white",
+     xlab = "Kolmogorov-Smirnov Statistic", xlim=c(0, max(fmri.p$original, quantile(fmri.p$statistics, 1 - alpha))))
+abline(v = fmri.p$original, lwd = 3, col = "#70da79")
+abline(v = quantile(fmri.p$statistics, 1 - alpha), lwd = 3, col = "#daa770")
+legend("top", legend=c("Original Statistic", "Quantile at 1 - α"), col=c("#70da79", "#daa770"), lwd = 2)
+```
+
+Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{N}_{i=1} \mathbb{I}\left(T_i \ge T \right)$, which tells us the proportion of permuted statistics that are larger than the original statistic.
+```{r}
+fmri.p$p
+```
+
