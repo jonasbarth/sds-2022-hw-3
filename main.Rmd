@@ -524,7 +524,7 @@ legend("top", legend=c("Original Statistic", "Quantile at 1 - α"), col=c("#70da
 ```
 
 Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{N}_{i=1} \mathbb{I}\left(T_i \ge T \right)$, which tells us the proportion of permuted statistics that are larger than the original statistic. 
-Assuming $\alpha = 0.05$ there are enough evidences for rejecting the null hypothesis; however if we choose a greater $\alpha$ we also increase the risk of Type I error probability and we may wrongly reject $H_{0}$ increasing the power of the statistical test. Considering the p-value below, with an $\alpha = 0.15$ we could reject $H_{0}$.
+Assuming $\alpha = 0.05$ there are not enough evidences for rejecting the null hypothesis; however if we choose a greater $\alpha$ we also increase the risk of Type I error probability and we may wrongly reject $H_{0}$ increasing the power of the statistical test. Considering the p-value below, with an $\alpha = 0.15$ we could reject $H_{0}$.
 ```{r echo=FALSE}
 fmri.p$p
 ```
