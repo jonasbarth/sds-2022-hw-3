@@ -563,6 +563,7 @@ stopCluster(cluster)
 The histogram below shows the Kolmogorov-Smirnov statistic values for the permuted fMRI response variables. The brown line is at the $1 - \alpha$ percentile of $H0(T)$, where as the green line shows the value of the original statistic before permuting the labels. As we can see, the original statistic is less than the  $1 - \alpha$ percentile, which means that we retain the null hypothesis $F_{ASD} = F_{TD}$ with significance level $\alpha$.
 
 However, the learning of the model is dependent on the engineered features on the fMRI dataset. Different features may produce different results. 
+
 ```{r echo=FALSE}
 hist(fmri.p$statistics, main = "Distribution of H0(T)", col = "orchid", border = "white",
      xlab = "Kolmogorov-Smirnov Statistic", xlim=c(0, max(fmri.p$original, quantile(fmri.p$statistics, 1 - alpha))))
@@ -572,10 +573,11 @@ legend("top", legend=c("Original Statistic", "Quantile at 1 - α"), col=c("#70da
 ```
 
 Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{N}_{i=1} \mathbb{I}\left(T_i \ge T \right)$, which tells us the proportion of permuted statistics that are larger than the original statistic.
-```{r}
+```{r echo=FALSE}
 fmri.p$p
 ```
-Below we show the distribution of scores predicted by the SVM. The red part of the histogram shows the scores assigned to the ASD samples by the SVM, the blue part the scores assigned to the TD samples, and the purple part the intersection of scores. As we can see, **most** of the histogram is purple, which means that the scores given by the SVM classifier for the two classes were very similar to each other. Visually, this confirms what we saw above. Namely, that the distribution of the **scores** given by the model are so similar in distribution, that we **retain** the null hypothesis.
+Below we show the **distribution of scores** predicted by the SVM. The **red part** of the histogram shows the scores assigned to the **ASD samples** by the SVM, the **blue part** the scores assigned to the **TD samples**, and the **purple part** the **intersection** of scores. As we can see, **most** of the histogram is purple, which means that the scores given by the SVM classifier for the two classes were very similar to each other. Visually, this confirms what we saw above. Namely, that the distribution of the **scores** given by the model are so similar in distribution, that we **retain** the null hypothesis.
+
 ```{r echo=FALSE}
 ts.feat$pred = fmri.p$pred
 asd.pred = ts.feat[ts.feat$label == 1, "pred"]
