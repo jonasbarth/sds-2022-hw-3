@@ -1,4 +1,4 @@
-name: Render documents with rmarkdown-action
+name: Build Main
 on: [push, workflow_dispatch]
 jobs:
   render_document:
