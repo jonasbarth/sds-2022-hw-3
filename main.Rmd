@@ -7,15 +7,15 @@ output: html_document
 
 # Index
 - [Simulation Study](#simulation-study)
-    - [Setup](#parameter-setup)
+    - [Parameter Setup](#parameter-setup)
     - [Creating Data](#creating-data)
+    - [Friedman Test Function](#friedman-test-function)
     - [Simulation Loop](#simulation-loop)
     - [Different Parameters](#different-parameters)
 - [Friedman fMRI Data](#fmri-data)
     - [Feature Engineering](#feature-engineering)
     - [Simulation](#fmri-friedman-test)
 
-# Setup
 ```{r setup, include=FALSE}
 load("hw3_data.RData")
 library('dplyr')
@@ -29,17 +29,9 @@ library(e1071)
 
 
 # Simulation Study {#simulation-study}
-Repeat $M$ times:
+In this simulation study, we will examine the Friedman procedure for two sample testing. The goal of the test is to check whether two probability densities are equal, $p(x) = p_0(x)$, by training a **binary classifier** on the dataset containing samples from two classes, and calculating **test statistics** on the scores that the classifier assigns to the samples to calculate a **p-value**. We will use the **permutation** variation, which compares the chosen test statistic calculated on the **original dataset** with the $1 - \alpha$ quantile of a set of $p$ test statistics that were measured on a dataset where the response variables have been permuted.
 
-1. pick two k-variate distributions to sample from. Each distribution represents one class.
-1. sample $n_0$ and $n_1$ number of samples from the respective distributions.
-1. train a binary classifier
-1. do permutation test (slide 8)
-Experiment with different:
-
-distributions
-sample sizes
-Finally, summarise results.
+For this study, we will use **Logistic Regression** classifier and the **Kolmogorov-Smirnov** test statistic.
 
 ## Setting up parameters {#parameter-setup}
 We set up the following parameters for the **simulation study**.
@@ -48,9 +40,9 @@ We set up the following parameters for the **simulation study**.
 - the number of dimensions $k$ for each distribution.
 - the number of samples from each distribution, $n0$ and $n1$ respectively.
 - the confidence level $\alpha$.
+
 ```{r hyperparameters}
 M = 1e3
-P = 10
 
 k = 5
 n0 = 100
@@ -175,6 +167,12 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
 
 ```{r include=FALSE}
 produce.test.statistics.par = function(df, p, model = "lg") {
+  #' In parallel, produces a set of p test statistics by permuting the labels of the df dataframe p times,
+  #' training a glm classifier on each permuted set, and doing a test statistic on the output scores.
+  #' 
+  #' @param df the dataframe to be permuted and trained on.
+  #' @param p the number of test statistics to generated.
+  #' @return a set of test statistics.
   test.statistics <- foreach(i = 1:p, .combine=c, .packages="e1071", .export="permute.labels") %dopar% {
     permuted.df = permute.labels(df)
     print(length(permuted.df))
@@ -199,7 +197,7 @@ produce.test.statistics.par = function(df, p, model = "lg") {
 ```
 
 
-```{r}
+```{r include=FALSE}
 permute.labels = function(df) {
   #' Permutes the labels of a dataframe. Assumes that the dataframe has a column named "label".
   #' 
@@ -216,33 +214,6 @@ permute.labels = function(df) {
 
   return(permuted.df)
 }
-
-produce.test.statistic = function(df, p) {
-  #' Produces a set of p test statistics by permuting the labels of the df dataframe p times, training
-  #' a glm classifier on each permuted set, and doing a test statistic on the output scores.
-  #' 
-  #' @param df the dataframe to be permuted and trained on.
-  #' @param p the number of test statistics to generated.
-  #' @return a set of test statistics.
-  
-  test.statistics = numeric(p)
-  for (i in 1:p) {
-    permuted.df = permute.labels(df)
-    
-    model = glm(formula=label ~ ., data=permuted.df, family=binomial)
-    y_pred = predict(model, permuted.df, type='response')
-    
-    permuted.df$y_pred = y_pred
-    
-    y_pred_class_1 = permuted.df[permuted.df$label == 1, "y_pred"]
-    y_pred_class_0 = permuted.df[permuted.df$label == 0, "y_pred"]
-    
-    result = ks.test(y_pred_class_0, y_pred_class_1)
-    test.statistics[i] = result$statistic
-  }
-  return(list(statistics=test.statistics))
-}
-
 
 train.predict = function(df, model = "lg") {
   #' Trains a glm on the df dataframe and adds the predicted scores to it.
@@ -262,7 +233,12 @@ train.predict = function(df, model = "lg") {
     
   return(df)
 }
+```
 
+## Friedman Test Function {#friedman-test-function}
+We are running the Friedman test with permuting of the labels in the dataset. The `friedman.test.permute.par` function first calculates the **Kolmogorov-Smirnov** statistic on the original data, then permutes the labels $p$ times, calculating the **Kolmogorov-Smirnov** statistic at each permutation. The permutations are done in parallel. Finally, the p-value is calculated by getting the proportion of permuted KS statistics that are greater than or equal to the original statistic. $$p = \frac{1}{N} \sum\limits^{N}_{i=1} \mathbb{I}\left(T_i \ge T \right)$$
+
+```{r}
 friedman.test.permute.par = function(df, alpha = 0.05, p = 1e2, model = "lg") {
   #' Running the Friedman test with permutation
   #' @param df the dataframe to run the Friedman test on. Must have a label column.
@@ -271,7 +247,7 @@ friedman.test.permute.par = function(df, alpha = 0.05, p = 1e2, model = "lg") {
   #' @return a list of the original statistic and the permuted statistic at quantile alpha-
   original.predictions = train.predict(df, model)
 
-    y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
+  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
   y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
   original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
   
@@ -282,38 +258,15 @@ friedman.test.permute.par = function(df, alpha = 0.05, p = 1e2, model = "lg") {
   
   return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=original.predictions$y_pred))
 }
-
-friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
-  #' Running the Friedman test with permutation
-  #' @param df the dataframe to run the Friedman test on. Must have a label column.
-  #' @param alpha the alpha value to calculate the test statistic at.
-  #' @param p the number of permutations to run
-  #' @return a list of the original statistic and the permuted statistic at quantile alpha-
-  original.predictions = train.predict(df)
-  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
-  y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
-  original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
-  
-  test.statistics = produce.test.statistic(df, p)
-  y.pred = test.statistics$pred
-  print(length(y.pred))
-  test.statistics = test.statistics$statistics
-  
-  p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
-  
-  return(list(original=original.statistic, p=p.value, statistics=test.statistics, pred=y.pred))
-}
 ```
 
-## Simulation Loop {#simulation-loop}
-The `simulate` function runs $M$ number of simulations to find the **p-value**, **size** and **power** of the **Wilcox** two sample test. In each simulation, we:
 
-1. Create a **k-variate** dataset.
-1. Split the dataset into **train** and **test** sets.
-1. Train a **Logistic Regression** model on the **train set**.
-1. Get the predicted scores of the model on the **test set**.
-1. Feed the predicted scores for class 0 and class 1 samples to the **Wilcox** test.
-1. Save the **p-value** returned by the **Wilcox** test.
+## Simulation Loop {#simulation-loop}
+The `simulate` function runs $M$ number of simulations to find the **p-value** of the **Kolmogorov-Smirnov** two sample test, using permutation of the response variables. In each simulation, we:
+
+1. Create a **k-variate** dataset, under $H_0$ or $H_1$.
+1. Run the [Friedman test](#friedman-test-function).
+1. Save the **p-value**.
 
 ```{r simulation loop}
 simulate = function(M, n0, n1, k, create.data, H0) {
@@ -343,7 +296,7 @@ simulate = function(M, n0, n1, k, create.data, H0) {
 ## Results {#results}
 We can observe that when the null hypothesis is false, i.e. when the data comes from two **separate** distributions, then the distribution of p-values is **highly skewed** towards $0$. In particular we can observe that the p-value is **almost always** under the $\alpha = 0.05$ threshold. This happens because the scores generated by the *Logistic Regression* classifier are distributed in a way which makes it highly likely that they come from **separate** distributions.
 
-```{r H1 simulation, echo=FALSE, warning=FALSE}
+```{r H1 simulation, echo=FALSE, warning=FALSE, out.width="100%"}
 totalCores = detectCores()
 
 cluster <- makeCluster(totalCores[1]-1) 
@@ -363,7 +316,7 @@ text(alpha + 0.03, max(h1.hist$counts), labels = 'α', col='orange')
 
 We observe that when the null hypothesis is true, i.e. the data comes from the **same** distribution, the distribution of p-values is almost uniform. This happens because the scores generated by the *Logistic Regression* model are very similar for both classes, which means that the model cannot easily distinguish between them and in turn causes p-values to be uniformly distributed when the scores are given to the **Kolmogorov-Smirnov** test.
 
-```{r H0 simulation, echo=FALSE, warning=FALSE}
+```{r H0 simulation, echo=FALSE, warning=FALSE, out.width="100%"}
 totalCores = detectCores()
 
 cluster <- makeCluster(totalCores[1]-1) 
@@ -428,7 +381,6 @@ for (i in 1:nrow(params.df)) {
 ```
 
 
-
 ```{r prepare values for plotting, include=FALSE}
 performance = read.csv('performance.csv')
 k.values = sort(unique(performance$k))
@@ -438,7 +390,8 @@ params.df = expand.grid(k=k.values, N=N.values, prop=prop.values)
 ```
 
 The plot below shows the **size** of the test, i.e. the probability of observing a **Type 1 Error** (false positive) as a function of the **number of features** $k$, and the **number of samples**. Each circle is the **average p-value** of $M$ simulations. We see that the probability of a false discovery, i.e. thinking that the data does **NOT** come from two **separate distributions** when it actually does, are mostly the same, irregardless of the of the number of features, number of samples.
-```{r echo=FALSE}
+
+```{r echo=FALSE, out.width="100%"}
 performance.summary = performance |>
   group_by(k, N) |>
   dplyr::summarise(
@@ -460,7 +413,7 @@ performance.summary |>
 
 The plot below shows the **power** of the test, i.e. observing a **true positive** (complement of false negative) as a function of the **number of features** $k$, and the **number of samples**. Again, each circle is the **average p-value** of $M$ simulations. Here we can see that the probability of correctly rejecting the null hypothesis when it is false increases with the number of features and somewhat with the number of samples. For $k=3$, the probability of **true discovery** is lower than for $k=7$, indicating a positive relationship between the two variables. Additionally as the number of features grows the number of samples becomes less important in determining the probability of **true positive** as the density of the circles shows. This could be explained by the fact that as the number of dimensions increase, the amount of useful information encoded in them which helps the Logistic Regression model separate the classes also increases.
 
-```{r echo=FALSE}
+```{r echo=FALSE, out.width="100%"}
 performance.summary |>
   ggplot(
     aes(x=k, y = type.two)
@@ -474,7 +427,7 @@ performance.summary |>
 
 
 
-# 4. Friedman fMRI Data {#fmri-data}
+# Friedman fMRI Data {#fmri-data}
 
 ## Feature Engineering {#feature-engineering}
 Below are functions for helping us to engineer some features for the **fMRI** dataset. We chose to engineer features across the **time dimension**, such that each brain region is still distinguishable from the others.
@@ -548,7 +501,6 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
 ## fMRI Friedman Test {#fmri-friedman-test}
 We run the Friedman test on the engineered fMRI data with $p = 1000$ permutations. We are using the Support Vector Machine (SVM) classifier to help combat overfitting.
 
-If the original calculated value is **greater** than the $1 - \alpha$ quantile, then the H0 can be rejected.
 ```{r fmri simulation, warning=FALSE}
 totalCores = detectCores()
 
@@ -563,7 +515,7 @@ The histogram below shows the Kolmogorov-Smirnov statistic values for the permut
 
 However, the learning of the model is dependent on the engineered features on the fMRI dataset. Different features may produce different results. 
 
-```{r echo=FALSE}
+```{r echo=FALSE, out.width="100%"}
 hist(fmri.p$statistics, main = "Distribution of H0(T)", col = "orchid", border = "white",
      xlab = "Kolmogorov-Smirnov Statistic", xlim=c(0, max(fmri.p$original, quantile(fmri.p$statistics, 1 - alpha))))
 abline(v = fmri.p$original, lwd = 3, col = "#70da79")
@@ -578,7 +530,7 @@ fmri.p$p
 ```
 Below we show the **distribution of scores** predicted by the SVM. The **red part** of the histogram shows the scores assigned to the **ASD samples** by the SVM, the **blue part** the scores assigned to the **TD samples**, and the **purple part** the **intersection** of scores. As we can see, **most** of the histogram is purple, which means that the scores given by the SVM classifier for the two classes were very similar to each other. Visually, this confirms what we saw above. Namely, that the distribution of the **scores** given by the model are so similar in distribution, that we **retain** the null hypothesis.
 
-```{r echo=FALSE}
+```{r echo=FALSE, out.width="100%"}
 ts.feat$pred = fmri.p$pred
 asd.pred = ts.feat[ts.feat$label == 1, "pred"]
 td.pred = ts.feat[ts.feat$label == 0, "pred"]
