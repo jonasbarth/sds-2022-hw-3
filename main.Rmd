@@ -1,5 +1,5 @@
 ---
-title: "main"
+title: "SDS Homework 3"
 author: "Jonas Barth, Mattia Castaldo, Matteo Migliarini"
 date: "2023-02-03"
 output: html_document
@@ -14,7 +14,7 @@ output: html_document
     - [Different Parameters](#different-parameters)
 - [Friedman fMRI Data](#fmri-data)
     - [Feature Engineering](#feature-engineering)
-    - [Simulation](#fmri-friedman-test)
+    - [fMRI-Friedman](#fmri-friedman-test)
 
 ```{r setup, include=FALSE}
 load("hw3_data.RData")
@@ -29,7 +29,7 @@ library(e1071)
 
 
 # Simulation Study {#simulation-study}
-In this simulation study, we will examine the Friedman procedure for two sample testing. The goal of the test is to check whether two probability densities are equal, $p(x) = p_0(x)$, by training a **binary classifier** on the dataset containing samples from two classes, and calculating **test statistics** on the scores that the classifier assigns to the samples to calculate a **p-value**. We will use the **permutation** variation, which compares the chosen test statistic calculated on the **original dataset** with the $1 - \alpha$ quantile of a set of $p$ test statistics that were measured on a dataset where the response variables have been permuted.
+In this simulation study, we will examine the Friedman procedure for two sample testing. The goal of the test is to check whether two probability densities are equal, $p(x) = p_0(x)$, by training a **binary classifier** on the dataset containing samples from two classes, and calculating **test statistics** on the scores that the classifier assigns to the samples to calculate a **p-value**. We will use the **permutation** variation, which compares the chosen test statistic calculated on the **original dataset** with the $1 - \alpha$ quantile of a set of $p$ test statistics that were measured on a dataset where the response variables have been permuted. In order to test $H_{0}$ we need to know the null distribution $H_{0}(t)$, but since we are using the same data for training and scoring, the null distribution is not valid, so we permute to make it valid.
 
 For this study, we will use **Logistic Regression** classifier and the **Kolmogorov-Smirnov** test statistic.
 
