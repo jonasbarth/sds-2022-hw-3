@@ -61,7 +61,7 @@ alpha = 0.05
 
 ## Creating Data {#creating-data}
 In this section, we have functions for creating random distributions that will be used in the simulation study. The `random.distro` function let's us draw **univariate** data from a randomly chosen distribution with a determined *mean* and *standard deviation*. To generate a **k-variate** distribution, we call `random.distro` multiple times in the `random.data` function.
-```{r}
+```{r include=FALSE}
 random.distro <- function(n, mean = 1, sd = 1, noisiness = sd * 0.5, eps = 1e-5) {
   #' Generates a univariate random noisy distribution with n samples.
   #' 
@@ -118,7 +118,7 @@ random.data <- function(n, k, means = rnorm(k, 0, 3), sds = rnorm(k, 3, 1)) {
 
 
 The `create_df` function builds upon the previous functions data generating functions. It generates a dataframe with data drawn from either two separate distributions, or the same distribution. This function is used in the simulation loop and the data returned from it is used to train the **classifier**. 
-```{r}
+```{r include=FALSE}
 create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
     #' Creates a dataframe with samples from the two distributions.
     #' 
@@ -177,7 +177,6 @@ create_df = function(n0, n1, k, H0 = F, shuffle = T, distance = FALSE) {
 produce.test.statistics.par = function(df, p, model = "lg") {
   test.statistics <- foreach(i = 1:p, .combine=c, .packages="e1071", .export="permute.labels") %dopar% {
     permuted.df = permute.labels(df)
-    
     if (model == "lg") {
       m = glm(formula=label ~ ., data=permuted.df, family=binomial, maxit=1e3)
       y_pred = predict(m, permuted.df, type='response')
@@ -194,12 +193,12 @@ produce.test.statistics.par = function(df, p, model = "lg") {
     result = ks.test(y_pred_class_0, y_pred_class_1)
     result$statistic
   }
-  return(list(statistics=test.statistics, pred=y_pred))
+  return(list(statistics=test.statistics))
 }
 ```
 
 
-```{r}
+```{r include=FALSE}
 permute.labels = function(df) {
   #' Permutes the labels of a dataframe. Assumes that the dataframe has a column named "label".
   #' 
@@ -240,7 +239,7 @@ produce.test.statistic = function(df, p) {
     result = ks.test(y_pred_class_0, y_pred_class_1)
     test.statistics[i] = result$statistic
   }
-  return(list(statistics=test.statistics, pred=y_pred))
+  return(list(statistics=test.statistics))
 }
 
 
@@ -271,11 +270,11 @@ friedman.test.permute.par = function(df, alpha = 0.05, p = 1e2, model = "lg") {
   #' @return a list of the original statistic and the permuted statistic at quantile alpha-
   original.predictions = train.predict(df, model)
 
-    y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
+  y_pred_class_1 = original.predictions[original.predictions$label == 1, "y_pred"]
   y_pred_class_0 = original.predictions[original.predictions$label == 0, "y_pred"]
   original.statistic = ks.test(y_pred_class_0, y_pred_class_1)$statistic
-  
-  test.statistics = produce.test.statistics.par(df, p, model)
+
+    test.statistics = produce.test.statistics.par(df, p, model)
   test.statistics = test.statistics$statistics
   
   p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
@@ -296,7 +295,7 @@ friedman.test.permute = function(df, alpha = 0.05, p = 1e2) {
   
   test.statistics = produce.test.statistic(df, p)
   y.pred = test.statistics$pred
-  print(length(y.pred))
+
   test.statistics = test.statistics$statistics
   
   p.value = sum(test.statistics >= original.statistic) / length(test.statistics)
@@ -316,7 +315,7 @@ The `simulate` function runs $M$ number of simulations to find the **p-value**, 
 1. Save the **p-value** returned by the **Wilcox** test.
 
 
-```{r simulation loop}
+```{r simulation loop, include=FALSE}
 simulate = function(M, n0, n1, k, create.data, H0) {
     #' Simulates operating characteristics of a testing procedure for two distributions.
     #' 
@@ -462,7 +461,7 @@ performance.summary |>
 
 The plot below shows the **power** of the test, i.e. observing a **true positive** (complement of false negative) as a function of the **number of features** $k$, and the **number of samples**. Again, each circle is the **average p-value** of $M$ simulations. Here we can see that the probability of correctly rejecting the null hypothesis when it is false increases with the number of features and somewhat with the number of samples. For $k=3$, the probability of a **true discovery** ranges from $0.75$ to $0.85$, however for $k=7$ it is between $0.95$ and $1.0$, indicating a positive relationship between the two variables. This could be explained by the fact that as the number of dimensions increase, the amount of useful information encoded in them which helps the Logistic Regression model separate the classes also increases. Additionally, we also observe that **p-values** for smaller samples as indicated by **darker** circles cluster more towards the lower end of the probability interval for a specific value of $k$. E.g. for $k=6$, darker circles are more concentrated towards the bottom.
 
-```{r echo=FALSE, eval=FALSE}
+```{r echo=FALSE, eval=FALSE, include=FALSE}
 performance.summary |>
   ggplot(
     aes(x=k, y = type.two)
@@ -548,9 +547,8 @@ ts.feat = ts.feat[-ncol(ts.feat)] %>%
 ```
 
 ## fMRI Friedman Test {#fmri-friedman-test}
-We run the Friedman test on the engineered fMRI data with $p = 1000$ permutations. We are using the Support Vector Machine (SVM) classifier to help combat overfitting.
+We run the Friedman test on the engineered fMRI data with $p = 100$ permutations. We are using the Support Vector Machine (SVM) classifier to help combat overfitting.
 
-If the original calculated value is **greater** than the $1 - \alpha$ quantile, then the H0 can be rejected.
 ```{r fmri simulation, warning=FALSE}
 totalCores = detectCores()
 
@@ -577,6 +575,17 @@ Below, we show the value of the permutation test, $p = \frac{1}{N} \sum\limits^{
 fmri.p$p
 ```
 
-```{r}
-ts.feat$y_pred = fmri.p$pred
+Below we show the distribution of scores predicted by the SVM. The red part of the histogram shows the scores assigned to the ASD samples by the SVM, the blue part the scores assigned to the TD samples, and the purple part the intersection of scores. As we can see, **most** of the histogram is purple, which means that the scores given by the SVM classifier for the two classes were very similar to each other. Visually, this confirms what we saw above. Namely, that the distribution of the **scores** given by the model are so similar in distribution, that we **retain** the null hypothesis.
+```{r echo=FALSE}
+ts.feat$pred = fmri.p$pred
+asd.pred = ts.feat[ts.feat$label == 1, "pred"]
+td.pred = ts.feat[ts.feat$label == 0, "pred"]
+
+hist(asd.pred, col = rgb(1, 0, 0, 0.5), 
+     main = "Distribution of Scores",
+     xlab = "score")
+hist(td.pred, col = rgb(0, 0, 1, 0.5), add = TRUE)
+legend("topright", legend=c("ASD", "TD", "Both"), 
+       col = c(rgb(1, 0, 0, 0.5), rgb(0, 0, 1, 0.5), "#881fc4"), 
+       lwd = 10)
 ```
